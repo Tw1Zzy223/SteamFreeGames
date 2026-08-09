@@ -17,6 +17,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 public class StoreClient {
+    public static final int PAGE_SIZE = 50;
     public static final String MODE_FREE = "free";
     public static final String MODE_DISCOUNTS = "discounts";
     public static final String MODE_ALL = "all";
@@ -25,7 +26,10 @@ public class StoreClient {
     public SearchResult search(String mode, String query, int start, String sort, String tag, int minimumDiscount) throws Exception {
         StringBuilder url = new StringBuilder(SEARCH_URL)
                 .append("?start=").append(start)
-                .append("&count=50&dynamic_data=&category1=998&supportedlang=russian&infinite=1")
+                .append("&count=").append(PAGE_SIZE)
+                // category1=998 означает именно игры. Язык не ограничиваем,
+                // поэтому в каталоге доступны все игры Steam, а не только русскоязычные.
+                .append("&dynamic_data=&category1=998&infinite=1&cc=us")
                 .append("&sort_by=").append(encode(sort));
         if (MODE_FREE.equals(mode)) url.append("&specials=1&maxprice=free");
         if (MODE_DISCOUNTS.equals(mode)) url.append("&specials=1");
