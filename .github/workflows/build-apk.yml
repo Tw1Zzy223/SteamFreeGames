@@ -1,0 +1,42 @@
+name: Собрать APK
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Получить исходный код
+        uses: actions/checkout@v4
+      - name: Установить Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Подготовить Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.11.1'
+      - name: Собрать APK
+        run: |
+          gradle -p android assembleDebug --no-daemon
+          cp android/app/build/outputs/apk/debug/app-debug.apk Steam-Hunter.apk
+      - name: Сохранить APK в GitHub Actions
+        uses: actions/upload-artifact@v4
+        with:
+          name: Steam-Hunter-APK
+          path: Steam-Hunter.apk
+      - name: Добавить APK в GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          name: Steam Hunter ${{ github.ref_name }}
+          generate_release_notes: true
+          files: Steam-Hunter.apk
