@@ -20,6 +20,7 @@ public class StoreClient {
     public static final int PAGE_SIZE = 50;
     public static final String MODE_FREE = "free";
     public static final String MODE_DISCOUNTS = "discounts";
+    public static final String MODE_BEST = "best";
     public static final String MODE_ALL = "all";
     private static final String SEARCH_URL = "https://store.steampowered.com/search/results/";
 
@@ -32,7 +33,7 @@ public class StoreClient {
                 .append("&dynamic_data=&category1=998&infinite=1&cc=us")
                 .append("&sort_by=").append(encode(sort));
         if (MODE_FREE.equals(mode)) url.append("&specials=1&maxprice=free");
-        if (MODE_DISCOUNTS.equals(mode)) url.append("&specials=1");
+        if (MODE_DISCOUNTS.equals(mode) || MODE_BEST.equals(mode)) url.append("&specials=1");
         if (!query.isEmpty()) url.append("&term=").append(encode(query));
         if (!tag.isEmpty()) url.append("&tags=").append(encode(tag));
 
@@ -53,7 +54,7 @@ public class StoreClient {
 
             if (appId == null || title == null || image == null) continue;
             if (MODE_FREE.equals(mode) && discount != 100) continue;
-            if (MODE_DISCOUNTS.equals(mode) && discount < minimumDiscount) continue;
+            if ((MODE_DISCOUNTS.equals(mode) || MODE_BEST.equals(mode)) && discount < minimumDiscount) continue;
             String price = finalPriceRaw == null ? "Цена не указана" : cleanText(finalPriceRaw);
             games.add(new GameDeal(appId, cleanText(title), decodeHtml(image), discount, price));
         }
@@ -82,13 +83,41 @@ public class StoreClient {
                 genres.append(genreArray.getJSONObject(i).optString("description"));
             }
         }
+        ReviewSummary reviews = reviews(appId);
+        JSONObject requirements = mainData.optJSONObject("pc_requirements");
+        String minimum = requirements == null ? "Не указаны" : cleanText(requirements.optString("minimum", "Не указаны"));
+        String recommended = requirements == null ? "Не указаны" : cleanText(requirements.optString("recommended", "Не указаны"));
         return new GameDetails(
                 mainData.optString("name", "Игра Steam"),
                 mainData.optString("short_description", "Описание пока недоступно."),
                 genres.length() == 0 ? "Жанр не указан" : genres.toString(),
                 mainData.optString("header_image", ""),
-                prices
+                prices,
+                reviews,
+                minimum,
+                recommended
         );
+    }
+
+    public ReviewSummary reviews(String appId) throws Exception {
+        JSONObject root = readJson("https://store.steampowered.com/appreviews/" + appId
+                + "?json=1&language=all&purchase_type=all&num_per_page=3");
+        JSONObject summary = root.optJSONObject("query_summary");
+        int positive = summary == null ? 0 : summary.optInt("total_positive", 0);
+        int total = summary == null ? 0 : summary.optInt("total_reviews", 0);
+        int percent = total == 0 ? 0 : Math.round(positive * 100f / total);
+        List<String> samples = new ArrayList<>();
+        JSONArray array = root.optJSONArray("reviews");
+        if (array != null) {
+            for (int i = 0; i < Math.min(3, array.length()); i++) {
+                JSONObject review = array.optJSONObject(i);
+                if (review == null) continue;
+                String body = review.optString("review", "").replaceAll("\\s+", " ").trim();
+                if (body.length() > 220) body = body.substring(0, 217) + "…";
+                if (!body.isEmpty()) samples.add((review.optBoolean("voted_up") ? "👍 " : "👎 ") + body);
+            }
+        }
+        return new ReviewSummary(percent, total, samples);
     }
 
     private String regionPrice(JSONObject data) {
@@ -164,13 +193,32 @@ public class StoreClient {
         public final String genres;
         public final String imageUrl;
         public final Map<String, String> regionalPrices;
+        public final ReviewSummary reviews;
+        public final String minimumRequirements;
+        public final String recommendedRequirements;
 
-        public GameDetails(String title, String description, String genres, String imageUrl, Map<String, String> regionalPrices) {
+        public GameDetails(String title, String description, String genres, String imageUrl, Map<String, String> regionalPrices,
+                           ReviewSummary reviews, String minimumRequirements, String recommendedRequirements) {
             this.title = title;
             this.description = description;
             this.genres = genres;
             this.imageUrl = imageUrl;
             this.regionalPrices = regionalPrices;
+            this.reviews = reviews;
+            this.minimumRequirements = minimumRequirements;
+            this.recommendedRequirements = recommendedRequirements;
+        }
+    }
+
+    public static class ReviewSummary {
+        public final int positivePercent;
+        public final int totalReviews;
+        public final List<String> samples;
+
+        public ReviewSummary(int positivePercent, int totalReviews, List<String> samples) {
+            this.positivePercent = positivePercent;
+            this.totalReviews = totalReviews;
+            this.samples = samples;
         }
     }
 }
