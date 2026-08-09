@@ -49,6 +49,7 @@ import java.util.concurrent.Executors;
 
 public class MainActivity extends Activity {
     private static final long HOUR_MS = 60L * 60L * 1000L;
+    private static final String APP_VERSION = "0.4.0";
     private static final String[] GENRE_NAMES = {"Все жанры", "Экшен", "Стратегии", "RPG", "Приключения", "Инди", "Казуальные", "Симуляторы", "Гонки"};
     private static final String[] GENRE_TAGS = {"", "19", "9", "122", "21", "492", "597", "599", "699"};
     private static final String[] SORT_NAMES = {"Популярные", "Цена: дешевле", "По названию", "Сначала новинки"};
@@ -751,8 +752,8 @@ public class MainActivity extends Activity {
         executor.execute(() -> {
             try {
                 SteamFeaturesClient.LatestRelease release = featuresClient.latestRelease();
-                if (compareVersions(release.version, BuildConfig.VERSION_NAME) <= 0) {
-                    if (showCurrent) runOnUiThread(() -> Toast.makeText(this, "Установлена последняя версия " + BuildConfig.VERSION_NAME, Toast.LENGTH_LONG).show());
+                if (compareVersions(release.version, APP_VERSION) <= 0) {
+                    if (showCurrent) runOnUiThread(() -> Toast.makeText(this, "Установлена последняя версия " + APP_VERSION, Toast.LENGTH_LONG).show());
                     return;
                 }
                 runOnUiThread(() -> new AlertDialog.Builder(this).setTitle("Доступно обновление " + release.version)
