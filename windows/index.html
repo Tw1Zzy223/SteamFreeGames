@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' https: data:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'none';">
+  <title>Steam Hunter</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body class="theme-dark">
+  <div class="splash" id="splash">
+    <div class="splash-radar"><div></div><span>SH</span></div>
+    <h1>STEAM HUNTER</h1>
+    <p>Сканируем предложения Steam…</p>
+  </div>
+
+  <div class="app-shell">
+    <header class="titlebar">
+      <div class="titlebar-drag"><img src="icon.png" alt=""><span>Steam Hunter</span><b>v0.3.0</b></div>
+      <div class="window-controls">
+        <button data-window="minimize" aria-label="Свернуть">—</button>
+        <button data-window="maximize" aria-label="Развернуть">□</button>
+        <button class="close" data-window="close" aria-label="Закрыть">×</button>
+      </div>
+    </header>
+
+    <aside class="sidebar">
+      <div class="logo"><div class="logo-mark">SH</div><div><strong>STEAM HUNTER</strong><small>Центр выгодных игр</small></div></div>
+      <nav id="main-nav">
+        <button class="active" data-view="free"><span>◎</span>Бесплатно<b id="free-count">0</b></button>
+        <button data-view="discounts"><span>％</span>Скидки</button>
+        <button data-view="all"><span>▦</span>Все игры</button>
+        <button data-view="best"><span>◆</span>Лучшие предложения</button>
+        <div class="nav-label">МОЯ БИБЛИОТЕКА</div>
+        <button data-view="favorites"><span>♡</span>Избранное<b id="favorite-count">0</b></button>
+        <button data-view="viewed"><span>◷</span>Просмотренные</button>
+        <button data-view="compare"><span>⇄</span>Сравнение<b id="compare-count">0</b></button>
+        <div class="nav-label">СЕРВИСЫ</div>
+        <button data-view="sales"><span>◫</span>Распродажи</button>
+        <button data-view="friends"><span>♟</span>Steam и друзья</button>
+        <button data-view="support"><span>?</span>Поддержка</button>
+        <button data-view="settings"><span>⚙</span>Настройки</button>
+      </nav>
+      <div class="sidebar-account" id="sidebar-account">
+        <div class="avatar-placeholder">S</div>
+        <div><strong>Steam не подключён</strong><small>Нажмите для входа</small></div>
+        <span>›</span>
+      </div>
+    </aside>
+
+    <main class="workspace">
+      <section class="toolbar">
+        <div>
+          <p class="breadcrumb">STEAM HUNTER / <span id="section-kicker">БЕСПЛАТНО</span></p>
+          <h1 id="section-title">Можно забрать бесплатно</h1>
+          <p id="section-subtitle">Только временные скидки 100%, без обычных Free-to-Play.</p>
+        </div>
+        <div class="toolbar-actions">
+          <label class="global-search"><span>⌕</span><input id="search" type="search" placeholder="Найти игру в Steam…"><kbd>Enter</kbd></label>
+          <button class="icon-button" id="refresh" title="Обновить">↻</button>
+          <button class="profile-button" id="profile-button"><span>Подключить Steam</span><i>●</i></button>
+        </div>
+      </section>
+
+      <section class="filterbar" id="filterbar">
+        <div class="segmented" id="discount-filters">
+          <button class="active" data-discount="0">Все</button>
+          <button data-discount="30">от 30%</button>
+          <button data-discount="50">от 50%</button>
+          <button data-discount="70">от 70%</button>
+          <button data-discount="90">от 90%</button>
+        </div>
+        <select id="genre" aria-label="Жанр">
+          <option value="">Все жанры</option><option value="19">Экшен</option><option value="21">Приключения</option>
+          <option value="122">RPG</option><option value="9">Стратегии</option><option value="599">Симуляторы</option><option value="492">Инди</option>
+        </select>
+        <select id="sort" aria-label="Сортировка">
+          <option value="Reviews_DESC">По оценкам</option><option value="_ASC">По названию</option>
+          <option value="Price_ASC">Сначала дешёвые</option><option value="Released_DESC">Сначала новые</option>
+        </select>
+        <span class="result-count" id="result-count">Загрузка…</span>
+      </section>
+
+      <section id="content" class="content"><div class="loading-panel"><div class="spinner"></div><p>Получаем данные Steam…</p></div></section>
+    </main>
+  </div>
+
+  <div class="toast-stack" id="toasts"></div>
+  <div class="modal-layer hidden" id="modal-layer"><div class="modal" id="modal"></div></div>
+  <script src="renderer.js"></script>
+</body>
+</html>
