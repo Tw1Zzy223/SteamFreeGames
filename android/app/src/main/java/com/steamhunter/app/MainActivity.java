@@ -2,12 +2,8 @@ package com.steamhunter.app;
 
 import android.Manifest;
 import android.app.Activity;
-import android.app.Notification;
-import android.app.NotificationChannel;
-import android.app.NotificationManager;
-import android.app.PendingIntent;
+import android.app.AlertDialog;
 import android.content.Intent;
-import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
@@ -22,67 +18,73 @@ import android.os.Looper;
 import android.view.Gravity;
 import android.view.View;
 import android.view.inputmethod.EditorInfo;
+import android.widget.ArrayAdapter;
 import android.widget.Button;
+import android.widget.CheckBox;
 import android.widget.EditText;
+import android.widget.HorizontalScrollView;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ProgressBar;
 import android.widget.ScrollView;
+import android.widget.Spinner;
+import android.widget.Switch;
 import android.widget.TextView;
 
-import org.json.JSONObject;
+import androidx.core.splashscreen.SplashScreen;
 
-import java.io.BufferedReader;
 import java.io.InputStream;
-import java.io.InputStreamReader;
-import java.net.HttpURLConnection;
-import java.net.URL;
-import java.net.URLEncoder;
-import java.nio.charset.StandardCharsets;
 import java.text.DateFormat;
 import java.util.ArrayList;
 import java.util.Date;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
 public class MainActivity extends Activity {
-    private static final int BLACK = Color.rgb(5, 8, 6);
-    private static final int PANEL = Color.rgb(11, 24, 18);
-    private static final int FOREST = Color.rgb(17, 52, 40);
-    private static final int ACID = Color.rgb(185, 255, 44);
-    private static final int SOFT_GREEN = Color.rgb(137, 181, 104);
-    private static final int WHITE = Color.rgb(239, 247, 242);
-    private static final String TAB_FREE = "free";
-    private static final String TAB_DISCOUNTS = "discounts";
     private static final long HOUR_MS = 60L * 60L * 1000L;
-    private static final String CHANNEL_ID = "steam_hunter_deals";
-    private static final String PREFS = "steam_hunter_preferences";
-    private static final String SEEN_IDS = "seen_game_ids";
-    private static final String SEARCH_BASE = "https://store.steampowered.com/search/results/";
+    private static final String[] GENRE_NAMES = {"Все жанры", "Экшен", "Стратегии", "RPG", "Приключения", "Инди", "Казуальные", "Симуляторы", "Гонки"};
+    private static final String[] GENRE_TAGS = {"", "19", "9", "122", "21", "492", "597", "599", "699"};
+    private static final String[] SORT_NAMES = {"Популярные", "Цена: дешевле", "По названию", "Сначала новинки"};
+    private static final String[] SORT_VALUES = {"Reviews_DESC", "Price_ASC", "Name_ASC", "Released_DESC"};
+    private static final Integer[] DISCOUNT_VALUES = {1, 50, 70, 80, 90, 100};
 
-    private final ExecutorService executor = Executors.newFixedThreadPool(4);
+    private final ExecutorService executor = Executors.newFixedThreadPool(5);
     private final Handler handler = new Handler(Looper.getMainLooper());
+    private final StoreClient client = new StoreClient();
+    private UserStore store;
+    private boolean dark;
+    private int background;
+    private int panel;
+    private int panelStrong;
+    private int accent;
+    private int primaryText;
+    private int secondaryText;
+    private int border;
+
     private LinearLayout gamesContainer;
     private LinearLayout searchPanel;
     private TextView statusText;
     private TextView sectionTitle;
     private ProgressBar progressBar;
     private Button refreshButton;
-    private Button freeTabButton;
-    private Button discountsTabButton;
     private Button loadMoreButton;
+    private Button freeTab;
+    private Button discountsTab;
+    private Button allTab;
     private EditText searchInput;
-    private String currentTab = TAB_FREE;
+    private Spinner historySpinner;
+    private Spinner genreSpinner;
+    private Spinner sortSpinner;
+    private Spinner discountSpinner;
+    private String currentMode = StoreClient.MODE_FREE;
     private String currentQuery = "";
-    private int currentStart = 0;
-    private int loadedCount = 0;
-    private int totalCount = 0;
+    private int currentStart;
+    private int loadedCount;
+    private int totalCount;
 
     private final Runnable hourlyUpdate = new Runnable() {
         @Override public void run() {
@@ -93,348 +95,376 @@ public class MainActivity extends Activity {
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
+        SplashScreen splash = SplashScreen.installSplashScreen(this);
         super.onCreate(savedInstanceState);
-        createNotificationChannel();
+        splash.setOnExitAnimationListener(provider -> provider.getView().animate()
+                .alpha(0f).scaleX(1.08f).scaleY(1.08f).setDuration(420)
+                .withEndAction(provider::remove).start());
+        store = new UserStore(this);
+        applyPalette();
+        DealWorker.schedule(this);
         setContentView(createScreen());
-        selectTab(TAB_FREE);
+        selectTab(StoreClient.MODE_FREE);
         handler.postDelayed(hourlyUpdate, HOUR_MS);
+    }
+
+    private void applyPalette() {
+        dark = store.isDark();
+        background = dark ? Color.rgb(5, 8, 6) : Color.rgb(244, 248, 246);
+        panel = dark ? Color.rgb(11, 24, 18) : Color.WHITE;
+        panelStrong = dark ? Color.rgb(17, 52, 40) : Color.rgb(224, 235, 229);
+        accent = dark ? Color.rgb(185, 255, 44) : Color.rgb(89, 137, 0);
+        primaryText = dark ? Color.rgb(239, 247, 242) : Color.rgb(8, 17, 15);
+        secondaryText = dark ? Color.rgb(137, 181, 104) : Color.rgb(82, 100, 94);
+        border = dark ? Color.rgb(30, 75, 57) : Color.rgb(204, 220, 212);
+        getWindow().setStatusBarColor(background);
+        getWindow().setNavigationBarColor(background);
+        getWindow().getDecorView().setSystemUiVisibility(dark ? 0 : View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR);
     }
 
     private View createScreen() {
         ScrollView scroll = new ScrollView(this);
         scroll.setFillViewport(true);
-        scroll.setBackgroundColor(BLACK);
-
+        scroll.setBackgroundColor(background);
         LinearLayout page = vertical();
-        page.setPadding(dp(18), dp(22), dp(18), dp(42));
-        page.addView(text("◉  STEAM HUNTER", 18, ACID, Typeface.BOLD));
+        page.setPadding(dp(17), dp(20), dp(17), dp(44));
 
-        TextView eyebrow = text("РАДАР ИГРОВЫХ СКИДОК", 11, SOFT_GREEN, Typeface.BOLD);
-        page.addView(eyebrow, margins(-1, -2, 0, 32, 0, 8));
+        LinearLayout top = horizontal();
+        TextView brand = text("◉  STEAM HUNTER", 18, accent, Typeface.BOLD);
+        top.addView(brand, weighted(-2, 1f, 0));
+        Button favorites = smallButton("★ Избранное");
+        favorites.setOnClickListener(v -> showFavorites());
+        top.addView(favorites, wrap(0));
+        Button settings = smallButton("⚙");
+        settings.setContentDescription("Настройки");
+        settings.setOnClickListener(v -> showSettings());
+        top.addView(settings, wrap(7));
+        page.addView(top);
 
-        TextView title = text("Находим игры дешевле", 35, WHITE, Typeface.BOLD);
-        title.setLineSpacing(0, 0.92f);
-        page.addView(title);
-        TextView description = text("Бесплатные раздачи и все действующие скидки Steam в одном приложении.", 15, SOFT_GREEN, Typeface.NORMAL);
-        description.setLineSpacing(dp(3), 1f);
-        page.addView(description, margins(-1, -2, 0, 14, 0, 22));
+        page.addView(text("БЕСПЛАТНЫЕ ИГРЫ, СКИДКИ И ЦЕНЫ", 10, secondaryText, Typeface.BOLD), margins(-1, -2, 0, 27, 0, 7));
+        page.addView(text("Весь Steam на одном радаре", 33, primaryText, Typeface.BOLD));
+        page.addView(text("Ищите игры, сравнивайте четыре региона и сохраняйте лучшие предложения.", 14, secondaryText, Typeface.NORMAL), margins(-1, -2, 0, 10, 0, 20));
 
-        LinearLayout tabs = new LinearLayout(this);
-        tabs.setOrientation(LinearLayout.HORIZONTAL);
-        freeTabButton = button("Бесплатно", PANEL, ACID);
-        discountsTabButton = button("Скидки", PANEL, ACID);
-        freeTabButton.setOnClickListener(v -> selectTab(TAB_FREE));
-        discountsTabButton.setOnClickListener(v -> selectTab(TAB_DISCOUNTS));
-        tabs.addView(freeTabButton, weighted(48, 0));
-        tabs.addView(discountsTabButton, weighted(48, 8));
+        LinearLayout tabs = horizontal();
+        freeTab = button("Бесплатно", panel, accent);
+        discountsTab = button("Скидки", panel, accent);
+        allTab = button("Все игры", panel, accent);
+        freeTab.setOnClickListener(v -> selectTab(StoreClient.MODE_FREE));
+        discountsTab.setOnClickListener(v -> selectTab(StoreClient.MODE_DISCOUNTS));
+        allTab.setOnClickListener(v -> selectTab(StoreClient.MODE_ALL));
+        tabs.addView(freeTab, weighted(46, 1f, 0));
+        tabs.addView(discountsTab, weighted(46, 1f, 7));
+        tabs.addView(allTab, weighted(46, 1f, 7));
         page.addView(tabs);
 
-        searchPanel = new LinearLayout(this);
-        searchPanel.setOrientation(LinearLayout.HORIZONTAL);
+        searchPanel = vertical();
+        LinearLayout searchRow = horizontal();
         searchInput = new EditText(this);
         searchInput.setSingleLine(true);
         searchInput.setHint("Например, Mortal Kombat 1");
-        searchInput.setHintTextColor(Color.rgb(91, 118, 102));
-        searchInput.setTextColor(WHITE);
+        searchInput.setHintTextColor(secondaryText);
+        searchInput.setTextColor(primaryText);
         searchInput.setTextSize(14);
         searchInput.setPadding(dp(13), 0, dp(10), 0);
-        searchInput.setBackground(rounded(PANEL, 9, FOREST));
+        searchInput.setBackground(rounded(panel, 9, border));
         searchInput.setImeOptions(EditorInfo.IME_ACTION_SEARCH);
-        searchInput.setOnEditorActionListener((v, actionId, event) -> {
-            if (actionId == EditorInfo.IME_ACTION_SEARCH) { performSearch(); return true; }
+        searchInput.setOnEditorActionListener((v, id, event) -> {
+            if (id == EditorInfo.IME_ACTION_SEARCH) { performSearch(); return true; }
             return false;
         });
-        searchPanel.addView(searchInput, new LinearLayout.LayoutParams(0, dp(50), 1f));
-        Button searchButton = button("Найти", ACID, BLACK);
-        searchButton.setOnClickListener(v -> performSearch());
-        searchPanel.addView(searchButton, margins(86, 50, 8, 0, 0, 0));
-        page.addView(searchPanel, margins(-1, -2, 0, 14, 0, 0));
+        searchRow.addView(searchInput, weighted(50, 1f, 0));
+        Button search = button("Найти", accent, dark ? Color.BLACK : Color.WHITE);
+        search.setOnClickListener(v -> performSearch());
+        searchRow.addView(search, fixed(84, 50, 7));
+        searchPanel.addView(searchRow);
+        historySpinner = spinner(new String[]{"История поиска"});
+        searchPanel.addView(historySpinner, margins(-1, 45, 0, 7, 0, 0));
+        page.addView(searchPanel, margins(-1, -2, 0, 13, 0, 0));
+        updateHistory();
 
-        LinearLayout tools = new LinearLayout(this);
-        tools.setOrientation(LinearLayout.HORIZONTAL);
-        tools.setGravity(Gravity.CENTER_VERTICAL);
-        refreshButton = button("Обновить", FOREST, WHITE);
+        LinearLayout filters = vertical();
+        filters.setPadding(dp(10), dp(9), dp(10), dp(10));
+        filters.setBackground(rounded(panel, 10, border));
+        filters.addView(text("ФИЛЬТРЫ И СОРТИРОВКА", 10, accent, Typeface.BOLD));
+        LinearLayout filterRow = horizontal();
+        genreSpinner = spinner(GENRE_NAMES);
+        sortSpinner = spinner(SORT_NAMES);
+        filterRow.addView(genreSpinner, weighted(46, 1f, 0));
+        filterRow.addView(sortSpinner, weighted(46, 1f, 6));
+        filters.addView(filterRow);
+        discountSpinner = spinner(new String[]{"Любая скидка", "От 50%", "От 70%", "От 80%", "От 90%", "Только 100%"});
+        filters.addView(discountSpinner, margins(-1, 46, 0, 5, 0, 0));
+        Button apply = button("Применить фильтры", panelStrong, primaryText);
+        apply.setOnClickListener(v -> loadDeals(true, false));
+        filters.addView(apply, margins(-1, 44, 0, 5, 0, 0));
+        page.addView(filters, margins(-1, -2, 0, 12, 0, 0));
+
+        LinearLayout tools = horizontal();
+        refreshButton = button("↻ Обновить", panelStrong, primaryText);
         refreshButton.setOnClickListener(v -> loadDeals(true, true));
-        tools.addView(refreshButton, weighted(46, 0));
-        Button notifications = button("Уведомления", PANEL, ACID);
-        notifications.setOnClickListener(v -> requestNotifications());
-        tools.addView(notifications, weighted(46, 8));
-        page.addView(tools, margins(-1, -2, 0, 14, 0, 0));
+        tools.addView(refreshButton, weighted(44, 1f, 0));
+        Button notification = button("🔔 Настройки", panel, accent);
+        notification.setOnClickListener(v -> showSettings());
+        tools.addView(notification, weighted(44, 1f, 7));
+        page.addView(tools, margins(-1, -2, 0, 11, 0, 0));
 
-        sectionTitle = text("Бесплатно прямо сейчас", 23, WHITE, Typeface.BOLD);
-        page.addView(sectionTitle, margins(-1, -2, 0, 26, 0, 6));
-        statusText = text("Подключаемся к Steam…", 12, SOFT_GREEN, Typeface.NORMAL);
-        page.addView(statusText, margins(-1, -2, 0, 0, 0, 14));
-
+        sectionTitle = text("Бесплатно прямо сейчас", 23, primaryText, Typeface.BOLD);
+        page.addView(sectionTitle, margins(-1, -2, 0, 24, 0, 5));
+        statusText = text("Подключаемся к Steam…", 12, secondaryText, Typeface.NORMAL);
+        page.addView(statusText, margins(-1, -2, 0, 0, 0, 12));
         progressBar = new ProgressBar(this);
         page.addView(progressBar, new LinearLayout.LayoutParams(-1, dp(38)));
         gamesContainer = vertical();
         page.addView(gamesContainer);
-
-        loadMoreButton = button("Загрузить ещё", FOREST, ACID);
+        loadMoreButton = button("Загрузить следующие 50", panelStrong, accent);
         loadMoreButton.setOnClickListener(v -> loadDeals(false, false));
-        page.addView(loadMoreButton, margins(-1, 50, 0, 8, 0, 0));
+        page.addView(loadMoreButton, margins(-1, 50, 0, 7, 0, 0));
         loadMoreButton.setVisibility(View.GONE);
-
         scroll.addView(page);
         return scroll;
     }
 
-    private void selectTab(String tab) {
-        currentTab = tab;
+    private void selectTab(String mode) {
+        currentMode = mode;
         currentQuery = "";
         searchInput.setText("");
-        boolean free = TAB_FREE.equals(tab);
-        freeTabButton.setBackground(rounded(free ? ACID : PANEL, 9, free ? ACID : FOREST));
-        freeTabButton.setTextColor(free ? BLACK : ACID);
-        discountsTabButton.setBackground(rounded(free ? PANEL : ACID, 9, free ? FOREST : ACID));
-        discountsTabButton.setTextColor(free ? ACID : BLACK);
-        searchPanel.setVisibility(free ? View.GONE : View.VISIBLE);
-        sectionTitle.setText(free ? "Бесплатно прямо сейчас" : "Все скидки Steam");
+        styleTab(freeTab, StoreClient.MODE_FREE.equals(mode));
+        styleTab(discountsTab, StoreClient.MODE_DISCOUNTS.equals(mode));
+        styleTab(allTab, StoreClient.MODE_ALL.equals(mode));
+        searchPanel.setVisibility(StoreClient.MODE_FREE.equals(mode) ? View.GONE : View.VISIBLE);
+        discountSpinner.setVisibility(StoreClient.MODE_DISCOUNTS.equals(mode) ? View.VISIBLE : View.GONE);
+        sectionTitle.setText(StoreClient.MODE_FREE.equals(mode) ? "Бесплатно прямо сейчас" : StoreClient.MODE_DISCOUNTS.equals(mode) ? "Все скидки Steam" : "Все игры Steam");
         loadDeals(true, false);
+    }
+
+    private void styleTab(Button button, boolean selected) {
+        button.setBackground(rounded(selected ? accent : panel, 9, selected ? accent : border));
+        button.setTextColor(selected ? (dark ? Color.BLACK : Color.WHITE) : accent);
     }
 
     private void performSearch() {
         currentQuery = searchInput.getText().toString().trim();
-        sectionTitle.setText(currentQuery.isEmpty() ? "Все скидки Steam" : "Результаты: «" + currentQuery + "»");
+        store.addHistory(currentQuery);
+        updateHistory();
+        sectionTitle.setText(currentQuery.isEmpty() ? "Результаты Steam" : "Результаты: «" + currentQuery + "»");
         loadDeals(true, false);
     }
 
+    private void updateHistory() {
+        if (historySpinner == null) return;
+        List<String> values = new ArrayList<>();
+        values.add("История поиска");
+        values.addAll(store.history());
+        historySpinner.setAdapter(adapter(values.toArray(new String[0])));
+        historySpinner.setOnItemSelectedListener(new SimpleItemListener(position -> {
+            if (position > 0) {
+                searchInput.setText(values.get(position));
+                currentQuery = values.get(position);
+                loadDeals(true, false);
+            }
+        }));
+    }
+
     private void loadDeals(boolean reset, boolean manual) {
-        if (reset) { currentStart = 0; loadedCount = 0; }
+        if (reset) { currentStart = 0; loadedCount = 0; gamesContainer.removeAllViews(); }
         progressBar.setVisibility(View.VISIBLE);
         refreshButton.setEnabled(false);
         loadMoreButton.setEnabled(false);
         statusText.setText(manual ? "Проверяем Steam…" : "Загружаем предложения…");
-        String tabAtRequest = currentTab;
-        String queryAtRequest = currentQuery;
-        int startAtRequest = currentStart;
+        String mode = currentMode;
+        String query = currentQuery;
+        int start = currentStart;
+        String sort = SORT_VALUES[sortSpinner.getSelectedItemPosition()];
+        String tag = GENRE_TAGS[genreSpinner.getSelectedItemPosition()];
+        int minimum = StoreClient.MODE_DISCOUNTS.equals(mode) ? DISCOUNT_VALUES[discountSpinner.getSelectedItemPosition()] : 0;
 
         executor.execute(() -> {
             try {
-                SearchResult result = fetchDeals(tabAtRequest, queryAtRequest, startAtRequest);
-                runOnUiThread(() -> {
-                    if (tabAtRequest.equals(currentTab) && queryAtRequest.equals(currentQuery)) showDeals(result, reset);
-                });
+                StoreClient.SearchResult result = client.search(mode, query, start, sort, tag, minimum);
+                runOnUiThread(() -> { if (mode.equals(currentMode) && query.equals(currentQuery)) showDeals(result, reset); });
+            } catch (Exception error) { runOnUiThread(this::showError); }
+        });
+    }
+
+    private void showDeals(StoreClient.SearchResult result, boolean reset) {
+        progressBar.setVisibility(View.GONE);
+        refreshButton.setEnabled(true);
+        loadMoreButton.setEnabled(true);
+        loadedCount += result.games.size();
+        totalCount = result.totalCount;
+        currentStart += 50;
+        String time = DateFormat.getTimeInstance(DateFormat.SHORT, new Locale("ru", "RU")).format(new Date());
+        statusText.setText("Показано: " + loadedCount + " · В Steam найдено: " + totalCount + " · " + time);
+        if (result.games.isEmpty() && reset) {
+            String message = currentQuery.isEmpty() ? "Подходящих игр пока не найдено." : "«" + currentQuery + "» не найдена с выбранными фильтрами.";
+            TextView empty = text(message, 16, secondaryText, Typeface.BOLD);
+            empty.setGravity(Gravity.CENTER); empty.setPadding(dp(15), dp(50), dp(15), dp(50));
+            gamesContainer.addView(empty);
+        } else {
+            for (StoreClient.GameDeal game : result.games) gamesContainer.addView(createGameCard(game));
+        }
+        loadMoreButton.setVisibility(currentStart < totalCount ? View.VISIBLE : View.GONE);
+    }
+
+    private View createGameCard(StoreClient.GameDeal game) {
+        LinearLayout card = vertical();
+        card.setPadding(dp(11), dp(11), dp(11), dp(11));
+        card.setBackground(rounded(panel, 14, border));
+        ImageView image = new ImageView(this);
+        image.setScaleType(ImageView.ScaleType.CENTER_CROP);
+        image.setBackgroundColor(panelStrong);
+        card.addView(image, new LinearLayout.LayoutParams(-1, dp(145)));
+        loadImage(game.imageUrl, image);
+
+        String badge = game.discount > 0 ? "−" + game.discount + "%  ·  " + game.currentPrice : "БЕЗ СКИДКИ  ·  " + game.currentPrice;
+        card.addView(text(badge, 11, game.discount > 0 ? accent : secondaryText, Typeface.BOLD), margins(-1, -2, 0, 13, 0, 5));
+        card.addView(text(game.title, 23, primaryText, Typeface.BOLD));
+        if (store.isViewed(game.appId)) card.addView(text("✓ Просмотрено", 10, secondaryText, Typeface.BOLD));
+
+        LinearLayout mainActions = horizontal();
+        Button details = button("Подробнее", panelStrong, primaryText);
+        details.setOnClickListener(v -> showDetails(game));
+        mainActions.addView(details, weighted(46, 1f, 0));
+        Button steam = button("Открыть в Steam ↗", accent, dark ? Color.BLACK : Color.WHITE);
+        steam.setOnClickListener(v -> openSteam(game));
+        mainActions.addView(steam, weighted(46, 1.25f, 7));
+        card.addView(mainActions, margins(-1, -2, 0, 13, 0, 0));
+
+        LinearLayout secondary = horizontal();
+        Button favorite = smallButton(store.isFavorite(game.appId) ? "★ В избранном" : "☆ В избранное");
+        favorite.setOnClickListener(v -> { store.toggleFavorite(game); favorite.setText(store.isFavorite(game.appId) ? "★ В избранном" : "☆ В избранное"); });
+        secondary.addView(favorite, weighted(40, 1f, 0));
+        Button share = smallButton("Поделиться");
+        share.setOnClickListener(v -> shareGame(game));
+        secondary.addView(share, weighted(40, 1f, 7));
+        card.addView(secondary, margins(-1, -2, 0, 7, 0, 0));
+        card.setLayoutParams(margins(-1, -2, 0, 0, 0, 14));
+        return card;
+    }
+
+    private void showDetails(StoreClient.GameDeal game) {
+        store.markViewed(game.appId);
+        AlertDialog loading = new AlertDialog.Builder(this).setTitle(game.title).setMessage("Загружаем описание и цены четырёх регионов…").setNegativeButton("Закрыть", null).show();
+        executor.execute(() -> {
+            try {
+                StoreClient.GameDetails details = client.details(game.appId);
+                runOnUiThread(() -> { loading.dismiss(); showDetailsDialog(game, details); });
             } catch (Exception error) {
-                runOnUiThread(this::showError);
+                runOnUiThread(() -> { loading.dismiss(); new AlertDialog.Builder(this).setTitle("Не удалось загрузить подробности").setMessage("Steam временно не вернул данные. Попробуйте позже.").setPositiveButton("Понятно", null).show(); });
             }
         });
     }
 
-    private SearchResult fetchDeals(String tab, String query, int start) throws Exception {
-        StringBuilder url = new StringBuilder(SEARCH_BASE)
-                .append("?start=").append(start)
-                .append("&count=50&dynamic_data=&sort_by=_ASC&specials=1&category1=998&supportedlang=russian&infinite=1");
-        if (TAB_FREE.equals(tab)) url.append("&maxprice=free");
-        if (!query.isEmpty()) url.append("&term=").append(URLEncoder.encode(query, StandardCharsets.UTF_8.name()));
-
-        HttpURLConnection connection = (HttpURLConnection) new URL(url.toString()).openConnection();
-        connection.setConnectTimeout(15_000);
-        connection.setReadTimeout(20_000);
-        connection.setRequestProperty("Accept-Language", "ru-RU,ru;q=0.9");
-        connection.setRequestProperty("User-Agent", "SteamHunter-Android/0.2");
-        if (connection.getResponseCode() != 200) throw new IllegalStateException("Steam ответил кодом " + connection.getResponseCode());
-
-        StringBuilder json = new StringBuilder();
-        try (BufferedReader reader = new BufferedReader(new InputStreamReader(connection.getInputStream(), StandardCharsets.UTF_8))) {
-            String line;
-            while ((line = reader.readLine()) != null) json.append(line);
-        } finally { connection.disconnect(); }
-
-        JSONObject payload = new JSONObject(json.toString());
-        String html = payload.optString("results_html", "");
-        int total = payload.optInt("total_count", 0);
-        Matcher rows = Pattern.compile("<a\\s+href=[\\s\\S]*?</a>").matcher(html);
-        List<Deal> deals = new ArrayList<>();
-
-        while (rows.find()) {
-            String row = rows.group();
-            String appId = match(row, "data-ds-appid=\"(\\d+)\"");
-            String title = match(row, "<span class=\"title\">([\\s\\S]*?)</span>");
-            String image = match(row, "class=\"search_capsule\"><img src=\"([^\"]+)\"");
-            String discountText = match(row, "data-discount=\"(\\d+)\"");
-            String finalPrice = match(row, "data-price-final=\"(\\d+)\"");
-            if (appId == null || title == null || image == null || discountText == null) continue;
-            int discount = Integer.parseInt(discountText);
-            boolean accepted = TAB_FREE.equals(tab) ? discount == 100 && "0".equals(finalPrice) : discount > 0;
-            if (accepted) deals.add(new Deal(appId, decodeHtml(title.trim()), decodeHtml(image), discount));
+    private void showDetailsDialog(StoreClient.GameDeal game, StoreClient.GameDetails details) {
+        LinearLayout content = vertical();
+        content.setPadding(dp(18), dp(6), dp(18), dp(8));
+        content.addView(text(details.genres, 13, Color.rgb(70, 112, 52), Typeface.BOLD));
+        content.addView(text(details.description, 14, Color.DKGRAY, Typeface.NORMAL), margins(-1, -2, 0, 8, 0, 13));
+        content.addView(text("Цены по регионам", 18, Color.BLACK, Typeface.BOLD));
+        for (Map.Entry<String, String> entry : details.regionalPrices.entrySet()) {
+            content.addView(text(entry.getKey() + ":  " + entry.getValue(), 15, Color.DKGRAY, Typeface.NORMAL), margins(-1, -2, 0, 5, 0, 0));
         }
-        return new SearchResult(deals, total);
+        content.addView(text("Цены могут отличаться из-за региональных правил Steam. Покупка подтверждается только в Steam.", 11, Color.GRAY, Typeface.NORMAL), margins(-1, -2, 0, 12, 0, 0));
+        ScrollView scroll = new ScrollView(this); scroll.addView(content);
+        new AlertDialog.Builder(this).setTitle(details.title).setView(scroll)
+                .setPositiveButton("Открыть в Steam", (d, w) -> openSteam(game))
+                .setNeutralButton("Поделиться", (d, w) -> shareGame(game))
+                .setNegativeButton(store.isFavorite(game.appId) ? "Убрать из избранного" : "В избранное", (d, w) -> store.toggleFavorite(game)).show();
     }
 
-    private String match(String source, String expression) {
-        Matcher matcher = Pattern.compile(expression).matcher(source);
-        return matcher.find() ? matcher.group(1) : null;
-    }
-
-    private String decodeHtml(String value) {
-        return value.replace("&amp;", "&").replace("&quot;", "\"").replace("&#039;", "'")
-                .replace("&lt;", "<").replace("&gt;", ">");
-    }
-
-    private void showDeals(SearchResult result, boolean reset) {
-        progressBar.setVisibility(View.GONE);
-        refreshButton.setEnabled(true);
-        loadMoreButton.setEnabled(true);
-        if (reset) gamesContainer.removeAllViews();
-        loadedCount += result.deals.size();
-        totalCount = result.totalCount;
-        currentStart += 50;
-        String time = DateFormat.getTimeInstance(DateFormat.SHORT, new Locale("ru", "RU")).format(new Date());
-        statusText.setText("Показано: " + loadedCount + " из " + totalCount + "  ·  Проверено в " + time);
-
-        if (TAB_FREE.equals(currentTab)) notifyAboutNewDeals(result.deals);
-        if (result.deals.isEmpty() && reset) {
-            String message = currentQuery.isEmpty()
-                    ? "Сейчас подходящих предложений не найдено."
-                    : "«" + currentQuery + "» сейчас не участвует в скидках Steam.";
-            TextView empty = text(message, 17, SOFT_GREEN, Typeface.BOLD);
-            empty.setGravity(Gravity.CENTER);
-            empty.setPadding(dp(18), dp(56), dp(18), dp(56));
-            gamesContainer.addView(empty);
-        } else {
-            for (Deal deal : result.deals) gamesContainer.addView(createDealCard(deal));
+    private void showFavorites() {
+        Set<String> favorites = store.favorites();
+        if (favorites.isEmpty()) {
+            new AlertDialog.Builder(this).setTitle("Избранное").setMessage("Нажмите ☆ на карточке игры, и она появится здесь.").setPositiveButton("Понятно", null).show();
+            return;
         }
-        loadMoreButton.setVisibility(TAB_DISCOUNTS.equals(currentTab) && loadedCount < totalCount ? View.VISIBLE : View.GONE);
+        List<String> ids = new ArrayList<>(favorites);
+        String[] titles = new String[ids.size()];
+        for (int i = 0; i < ids.size(); i++) titles[i] = store.favoriteTitle(ids.get(i));
+        new AlertDialog.Builder(this).setTitle("Избранные игры").setItems(titles, (dialog, index) -> {
+            String id = ids.get(index);
+            showDetails(new StoreClient.GameDeal(id, titles[index], "", 0, "Откройте подробности"));
+        }).setNegativeButton("Закрыть", null).show();
     }
 
-    private View createDealCard(Deal deal) {
-        LinearLayout card = vertical();
-        card.setPadding(dp(12), dp(12), dp(12), dp(12));
-        card.setBackground(rounded(PANEL, 14, FOREST));
-
-        ImageView image = new ImageView(this);
-        image.setScaleType(ImageView.ScaleType.CENTER_CROP);
-        image.setBackgroundColor(FOREST);
-        card.addView(image, new LinearLayout.LayoutParams(-1, dp(150)));
-        loadImage(deal.imageUrl, image);
-
-        String badgeText = deal.discount == 100 ? "−100%  МОЖНО ЗАБРАТЬ БЕСПЛАТНО" : "−" + deal.discount + "%  СКИДКА В STEAM";
-        TextView badge = text(badgeText, 11, ACID, Typeface.BOLD);
-        card.addView(badge, margins(-1, -2, 0, 15, 0, 7));
-        card.addView(text(deal.title, 24, WHITE, Typeface.BOLD));
-
-        Button open = button("Открыть в Steam  ↗", ACID, BLACK);
-        open.setOnClickListener(v -> openSteam(deal.appId));
-        card.addView(open, margins(-1, 48, 0, 15, 0, 0));
-        card.setLayoutParams(margins(-1, -2, 0, 0, 0, 15));
-        return card;
+    private void showSettings() {
+        LinearLayout content = vertical(); content.setPadding(dp(20), dp(4), dp(20), 0);
+        Switch theme = new Switch(this); theme.setText("Тёмная тема"); theme.setChecked(store.isDark()); content.addView(theme);
+        CheckBox free = checkbox("Бесплатные раздачи", store.notifyFree()); content.addView(free);
+        CheckBox discounts = checkbox("Скидки", store.notifyDiscounts()); content.addView(discounts);
+        CheckBox favoritesOnly = checkbox("Только избранные игры", store.notifyFavoritesOnly()); content.addView(favoritesOnly);
+        CheckBox quiet = checkbox("Не беспокоить с 23:00 до 08:00", store.quietHours()); content.addView(quiet);
+        content.addView(text("Минимальная скидка для уведомлений", 13, Color.DKGRAY, Typeface.BOLD), margins(-1, -2, 0, 10, 0, 3));
+        Spinner threshold = spinner(new String[]{"50%", "70%", "80%", "90%", "100%"});
+        int[] values = {50, 70, 80, 90, 100};
+        int selected = 2;
+        for (int i = 0; i < values.length; i++) if (values[i] == store.notifyThreshold()) selected = i;
+        threshold.setSelection(selected); content.addView(threshold);
+        int finalSelected = selected;
+        new AlertDialog.Builder(this).setTitle("Настройки").setView(content).setPositiveButton("Сохранить", (dialog, which) -> {
+            int thresholdValue = values[threshold.getSelectedItemPosition()];
+            store.saveNotificationSettings(free.isChecked(), discounts.isChecked(), favoritesOnly.isChecked(), thresholdValue, quiet.isChecked());
+            if ((free.isChecked() || discounts.isChecked()) && Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+                requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS}, 100);
+            }
+            DealWorker.schedule(this);
+            if (theme.isChecked() != store.isDark()) { store.setDark(theme.isChecked()); recreate(); }
+        }).setNegativeButton("Отмена", null).show();
     }
 
-    private void loadImage(String imageUrl, ImageView imageView) {
+    private CheckBox checkbox(String label, boolean checked) {
+        CheckBox box = new CheckBox(this); box.setText(label); box.setChecked(checked); return box;
+    }
+
+    private void openSteam(StoreClient.GameDeal game) {
+        store.markViewed(game.appId);
+        startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse("https://store.steampowered.com/app/" + game.appId + "/")));
+    }
+
+    private void shareGame(StoreClient.GameDeal game) {
+        String discount = game.discount > 0 ? "Скидка −" + game.discount + "% · " + game.currentPrice : "Цена: " + game.currentPrice;
+        Intent share = new Intent(Intent.ACTION_SEND);
+        share.setType("text/plain");
+        share.putExtra(Intent.EXTRA_TEXT, game.title + "\n" + discount + "\nhttps://store.steampowered.com/app/" + game.appId + "/");
+        startActivity(Intent.createChooser(share, "Поделиться скидкой"));
+    }
+
+    private void loadImage(String url, ImageView image) {
+        if (url == null || url.isEmpty()) return;
         executor.execute(() -> {
-            try (InputStream stream = new URL(imageUrl).openStream()) {
+            try (InputStream stream = new java.net.URL(url).openStream()) {
                 Bitmap bitmap = BitmapFactory.decodeStream(stream);
-                runOnUiThread(() -> imageView.setImageBitmap(bitmap));
+                runOnUiThread(() -> image.setImageBitmap(bitmap));
             } catch (Exception ignored) { }
         });
     }
 
-    private void openSteam(String appId) {
-        startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse("https://store.steampowered.com/app/" + appId + "/")));
-    }
-
-    private void notifyAboutNewDeals(List<Deal> deals) {
-        SharedPreferences preferences = getSharedPreferences(PREFS, MODE_PRIVATE);
-        Set<String> seen = new HashSet<>(preferences.getStringSet(SEEN_IDS, new HashSet<>()));
-        boolean firstCheck = seen.isEmpty();
-        for (Deal deal : deals) {
-            if (!firstCheck && !seen.contains(deal.appId)) sendNotification(deal);
-            seen.add(deal.appId);
-        }
-        preferences.edit().putStringSet(SEEN_IDS, seen).apply();
-    }
-
-    private void sendNotification(Deal deal) {
-        if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) return;
-        Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse("https://store.steampowered.com/app/" + deal.appId + "/"));
-        PendingIntent pending = PendingIntent.getActivity(this, Integer.parseInt(deal.appId), intent, PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
-        Notification.Builder builder = Build.VERSION.SDK_INT >= 26 ? new Notification.Builder(this, CHANNEL_ID) : new Notification.Builder(this);
-        Notification notification = builder.setSmallIcon(android.R.drawable.star_big_on)
-                .setContentTitle("Новая бесплатная игра!")
-                .setContentText(deal.title + " можно забрать со скидкой 100%")
-                .setContentIntent(pending).setAutoCancel(true).build();
-        getSystemService(NotificationManager.class).notify(Integer.parseInt(deal.appId), notification);
-    }
-
-    private void requestNotifications() {
-        if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
-            requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS}, 100);
-        } else { statusText.setText("Уведомления уже включены"); }
-    }
-
-    private void createNotificationChannel() {
-        if (Build.VERSION.SDK_INT >= 26) {
-            NotificationChannel channel = new NotificationChannel(CHANNEL_ID, "Новые бесплатные игры", NotificationManager.IMPORTANCE_DEFAULT);
-            channel.setDescription("Сообщает о новых играх Steam со скидкой 100%");
-            getSystemService(NotificationManager.class).createNotificationChannel(channel);
-        }
-    }
-
     private void showError() {
-        progressBar.setVisibility(View.GONE);
-        refreshButton.setEnabled(true);
-        loadMoreButton.setEnabled(true);
-        statusText.setText("Не получилось связаться со Steam. Попробуйте обновить позже.");
+        progressBar.setVisibility(View.GONE); refreshButton.setEnabled(true); loadMoreButton.setEnabled(true);
+        statusText.setText("Steam временно не отвечает. Нажмите «Обновить» позже.");
     }
 
-    private LinearLayout vertical() {
-        LinearLayout layout = new LinearLayout(this);
-        layout.setOrientation(LinearLayout.VERTICAL);
-        return layout;
-    }
-
-    private TextView text(String value, int size, int color, int style) {
-        TextView view = new TextView(this);
-        view.setText(value); view.setTextSize(size); view.setTextColor(color);
-        view.setTypeface(Typeface.DEFAULT, style);
-        return view;
-    }
-
-    private Button button(String value, int background, int foreground) {
-        Button button = new Button(this);
-        button.setText(value); button.setTextColor(foreground); button.setTextSize(12);
-        button.setTypeface(Typeface.DEFAULT, Typeface.BOLD); button.setAllCaps(false);
-        button.setBackground(rounded(background, 9, background));
-        return button;
-    }
-
-    private GradientDrawable rounded(int background, int radius, int border) {
-        GradientDrawable drawable = new GradientDrawable();
-        drawable.setColor(background); drawable.setCornerRadius(dp(radius)); drawable.setStroke(dp(1), border);
-        return drawable;
-    }
-
-    private LinearLayout.LayoutParams margins(int width, int height, int left, int top, int right, int bottom) {
-        int actualWidth = width > 0 ? dp(width) : width;
-        int actualHeight = height > 0 ? dp(height) : height;
-        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(actualWidth, actualHeight);
-        params.setMargins(dp(left), dp(top), dp(right), dp(bottom));
-        return params;
-    }
-
-    private LinearLayout.LayoutParams weighted(int height, int left) {
-        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(0, dp(height), 1f);
-        params.setMargins(dp(left), 0, 0, 0);
-        return params;
-    }
-
+    private LinearLayout vertical() { LinearLayout l = new LinearLayout(this); l.setOrientation(LinearLayout.VERTICAL); return l; }
+    private LinearLayout horizontal() { LinearLayout l = new LinearLayout(this); l.setOrientation(LinearLayout.HORIZONTAL); l.setGravity(Gravity.CENTER_VERTICAL); return l; }
+    private TextView text(String value, int size, int color, int style) { TextView v = new TextView(this); v.setText(value); v.setTextSize(size); v.setTextColor(color); v.setTypeface(Typeface.DEFAULT, style); return v; }
+    private Button button(String value, int bg, int fg) { Button b = new Button(this); b.setText(value); b.setTextColor(fg); b.setTextSize(11); b.setTypeface(Typeface.DEFAULT, Typeface.BOLD); b.setAllCaps(false); b.setBackground(rounded(bg, 9, bg)); return b; }
+    private Button smallButton(String value) { return button(value, panel, accent); }
+    private Spinner spinner(String[] items) { Spinner s = new Spinner(this); s.setAdapter(adapter(items)); s.setBackground(rounded(panel, 8, border)); return s; }
+    private ArrayAdapter<String> adapter(String[] items) { return new ArrayAdapter<>(this, android.R.layout.simple_spinner_dropdown_item, items); }
+    private GradientDrawable rounded(int bg, int radius, int stroke) { GradientDrawable d = new GradientDrawable(); d.setColor(bg); d.setCornerRadius(dp(radius)); d.setStroke(dp(1), stroke); return d; }
+    private LinearLayout.LayoutParams weighted(int height, float weight, int left) { LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(0, height > 0 ? dp(height) : height, weight); p.setMargins(dp(left), 0, 0, 0); return p; }
+    private LinearLayout.LayoutParams fixed(int width, int height, int left) { LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(dp(width), dp(height)); p.setMargins(dp(left), 0, 0, 0); return p; }
+    private LinearLayout.LayoutParams wrap(int left) { LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(-2, dp(40)); p.setMargins(dp(left), 0, 0, 0); return p; }
+    private LinearLayout.LayoutParams margins(int width, int height, int left, int top, int right, int bottom) { LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(width > 0 ? dp(width) : width, height > 0 ? dp(height) : height); p.setMargins(dp(left), dp(top), dp(right), dp(bottom)); return p; }
     private int dp(int value) { return Math.round(value * getResources().getDisplayMetrics().density); }
 
-    @Override protected void onDestroy() {
-        handler.removeCallbacks(hourlyUpdate); executor.shutdownNow(); super.onDestroy();
-    }
+    @Override protected void onDestroy() { handler.removeCallbacks(hourlyUpdate); executor.shutdownNow(); super.onDestroy(); }
 
-    private static class Deal {
-        final String appId; final String title; final String imageUrl; final int discount;
-        Deal(String appId, String title, String imageUrl, int discount) {
-            this.appId = appId; this.title = title; this.imageUrl = imageUrl; this.discount = discount;
-        }
-    }
-
-    private static class SearchResult {
-        final List<Deal> deals; final int totalCount;
-        SearchResult(List<Deal> deals, int totalCount) { this.deals = deals; this.totalCount = totalCount; }
+    private interface PositionCallback { void selected(int position); }
+    private static class SimpleItemListener implements android.widget.AdapterView.OnItemSelectedListener {
+        private final PositionCallback callback;
+        SimpleItemListener(PositionCallback callback) { this.callback = callback; }
+        @Override public void onItemSelected(android.widget.AdapterView<?> parent, View view, int position, long id) { callback.selected(position); }
+        @Override public void onNothingSelected(android.widget.AdapterView<?> parent) { }
     }
 }

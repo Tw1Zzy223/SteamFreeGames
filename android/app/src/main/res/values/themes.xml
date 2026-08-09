@@ -7,4 +7,11 @@
         <item name="android:windowLightStatusBar">false</item>
         <item name="android:windowBackground">@color/hunter_background</item>
     </style>
+
+    <style name="Theme.SteamHunter.Starting" parent="Theme.SplashScreen.IconBackground">
+        <item name="windowSplashScreenBackground">#050806</item>
+        <item name="windowSplashScreenAnimatedIcon">@drawable/app_icon_v2</item>
+        <item name="windowSplashScreenIconBackgroundColor">#0B1812</item>
+        <item name="postSplashScreenTheme">@style/Theme.SteamHunter</item>
+    </style>
 </resources>
