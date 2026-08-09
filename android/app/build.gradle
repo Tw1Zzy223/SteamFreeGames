@@ -8,13 +8,26 @@ android {
         applicationId 'com.steamhunter.app'
         minSdk 24
         targetSdk 35
-        versionCode 3
-        versionName '0.2.0'
+        versionCode 4
+        versionName '0.3.0'
+    }
+
+    signingConfigs {
+        release {
+            def keyPath = System.getenv('STEAM_HUNTER_KEYSTORE')
+            if (keyPath) {
+                storeFile file(keyPath)
+                storePassword System.getenv('STEAM_HUNTER_STORE_PASSWORD')
+                keyAlias System.getenv('STEAM_HUNTER_KEY_ALIAS')
+                keyPassword System.getenv('STEAM_HUNTER_KEY_PASSWORD')
+            }
+        }
     }
 
     buildTypes {
         release {
             minifyEnabled false
+            signingConfig signingConfigs.release
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
     }

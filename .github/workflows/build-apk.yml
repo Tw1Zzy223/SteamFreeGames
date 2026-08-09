@@ -25,9 +25,15 @@ jobs:
         with:
           gradle-version: '8.11.1'
       - name: Собрать APK
+        env:
+          STEAM_HUNTER_STORE_PASSWORD: ${{ secrets.STEAM_HUNTER_STORE_PASSWORD }}
+          STEAM_HUNTER_KEY_PASSWORD: ${{ secrets.STEAM_HUNTER_KEY_PASSWORD }}
+          STEAM_HUNTER_KEY_ALIAS: ${{ secrets.STEAM_HUNTER_KEY_ALIAS }}
         run: |
-          gradle -p android assembleDebug --no-daemon
-          cp android/app/build/outputs/apk/debug/app-debug.apk Steam-Hunter.apk
+          echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 --decode > android/steam-hunter-release.jks
+          export STEAM_HUNTER_KEYSTORE="$GITHUB_WORKSPACE/android/steam-hunter-release.jks"
+          gradle -p android assembleRelease --no-daemon
+          cp android/app/build/outputs/apk/release/app-release.apk Steam-Hunter.apk
       - name: Сохранить APK в GitHub Actions
         uses: actions/upload-artifact@v4
         with:

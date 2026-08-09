@@ -60,9 +60,28 @@ public class DealWorker extends Worker {
                 StoreClient.SearchResult discounts = client.search(StoreClient.MODE_DISCOUNTS, "", 0, "Reviews_DESC", "", store.notifyThreshold());
                 process(discounts.games, "seen_worker_discounts", store, false);
             }
+            processSmartAlerts(client, store);
             return Result.success();
         } catch (Exception error) {
             return Result.retry();
+        }
+    }
+
+    private void processSmartAlerts(StoreClient client, UserStore store) throws Exception {
+        int checked = 0;
+        for (String appId : store.smartAlertIds()) {
+            if (checked++ >= 25) break;
+            String title = store.favoriteTitle(appId);
+            int target = store.smartAlertDiscount(appId);
+            StoreClient.SearchResult result = client.search(StoreClient.MODE_DISCOUNTS, title, 0, "Reviews_DESC", "", target);
+            for (StoreClient.GameDeal game : result.games) {
+                if (!appId.equals(game.appId) || game.discount < target) continue;
+                if (game.discount > store.lastAlertDiscount(appId)) {
+                    notifyGame(game, game.discount == 100);
+                    store.saveLastAlertDiscount(appId, game.discount);
+                }
+                break;
+            }
         }
     }
 
