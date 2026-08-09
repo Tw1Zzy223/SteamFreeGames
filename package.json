@@ -1,6 +1,6 @@
 {
   "name": "steam-hunter",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Steam Hunter — каталог бесплатных игр, скидок и событий Steam для Android и Windows.",
   "author": "Tw1Zzy223",
   "private": true,
@@ -21,6 +21,7 @@
   },
   "dependencies": {
     "drizzle-orm": "0.45.2",
+    "electron-updater": "^6.8.9",
     "react": "19.2.6",
     "react-dom": "19.2.6"
   },
@@ -69,6 +70,11 @@
     "win": {
       "target": "nsis",
       "icon": "windows/icon.png"
+    },
+    "publish": {
+      "provider": "github",
+      "owner": "Tw1Zzy223",
+      "repo": "SteamFreeGames"
     },
     "nsis": {
       "oneClick": false,

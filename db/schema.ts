@@ -1,4 +1,4 @@
-import { index, integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
+import { index, integer, primaryKey, sqliteTable, text } from "drizzle-orm/sqlite-core";
 
 export const supportMessages = sqliteTable("support_messages", {
   id: integer("id").primaryKey({ autoIncrement: true }),
@@ -28,4 +28,23 @@ export const steamSessions = sqliteTable("steam_sessions", {
 }, (table) => [
   index("idx_steam_sessions_device").on(table.deviceId),
   index("idx_steam_sessions_steam").on(table.steamId),
+]);
+
+export const steamSync = sqliteTable("steam_sync", {
+  steamId: text("steam_id").primaryKey(),
+  payload: text("payload").notNull().default("{}"),
+  updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
+});
+
+export const priceHistory = sqliteTable("price_history", {
+  appId: text("app_id").notNull(),
+  region: text("region").notNull(),
+  currency: text("currency").notNull(),
+  initialCents: integer("initial_cents").notNull(),
+  finalCents: integer("final_cents").notNull(),
+  discountPercent: integer("discount_percent").notNull(),
+  capturedAt: integer("captured_at", { mode: "timestamp_ms" }).notNull(),
+}, (table) => [
+  primaryKey({ columns: [table.appId, table.region, table.capturedAt] }),
+  index("idx_price_history_app_region_time").on(table.appId, table.region, table.capturedAt),
 ]);

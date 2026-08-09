@@ -1,7 +1,7 @@
 const { contextBridge, ipcRenderer } = require("electron");
 
 contextBridge.exposeInMainWorld("steamHunter", {
-  version: "0.3.0",
+  version: "0.4.0",
   windowAction: (action) => ipcRenderer.invoke("window-action", action),
   catalog: (options) => ipcRenderer.invoke("catalog", options),
   details: (appId) => ipcRenderer.invoke("details", appId),
@@ -13,9 +13,20 @@ contextBridge.exposeInMainWorld("steamHunter", {
   steamLogin: () => ipcRenderer.invoke("steam-login"),
   steamMe: () => ipcRenderer.invoke("steam-me"),
   steamFriends: () => ipcRenderer.invoke("steam-friends"),
+  steamLibrary: () => ipcRenderer.invoke("steam-library"),
+  steamAchievements: (appId) => ipcRenderer.invoke("steam-achievements", appId),
+  steamNews: (appId) => ipcRenderer.invoke("steam-news", appId),
+  priceHistory: (appId, region) => ipcRenderer.invoke("price-history", appId, region),
+  syncPull: () => ipcRenderer.invoke("sync-pull"),
+  syncPush: (data) => ipcRenderer.invoke("sync-push", data),
   steamLogout: () => ipcRenderer.invoke("steam-logout"),
   supportSend: (payload) => ipcRenderer.invoke("support-send", payload),
   supportMessages: (key) => ipcRenderer.invoke("support-messages", key),
   checkUpdate: () => ipcRenderer.invoke("check-update"),
+  installUpdate: () => ipcRenderer.invoke("install-update"),
+  desktopSettings: (settings) => ipcRenderer.invoke("desktop-settings", settings),
   onSteamAuthenticated: (callback) => ipcRenderer.on("steam-authenticated", () => callback()),
+  onShortcutSearch: (callback) => ipcRenderer.on("shortcut-search", () => callback()),
+  onShortcutRefresh: (callback) => ipcRenderer.on("shortcut-refresh", () => callback()),
+  onUpdateStatus: (callback) => ipcRenderer.on("update-status", (_event, status) => callback(status)),
 });
