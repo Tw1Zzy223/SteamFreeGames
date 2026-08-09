@@ -22,6 +22,7 @@ public class StoreClient {
     public static final String MODE_DISCOUNTS = "discounts";
     public static final String MODE_BEST = "best";
     public static final String MODE_ALL = "all";
+    public static final String MODE_WEEKENDS = "weekends";
     private static final String SEARCH_URL = "https://store.steampowered.com/search/results/";
 
     public SearchResult search(String mode, String query, int start, String sort, String tag, int minimumDiscount) throws Exception {
@@ -32,7 +33,7 @@ public class StoreClient {
                 // поэтому в каталоге доступны все игры Steam, а не только русскоязычные.
                 .append("&dynamic_data=&category1=998&infinite=1&cc=us")
                 .append("&sort_by=").append(encode(sort));
-        if (MODE_FREE.equals(mode)) url.append("&specials=1&maxprice=free");
+        if (MODE_FREE.equals(mode) || MODE_WEEKENDS.equals(mode)) url.append("&specials=1&maxprice=free");
         if (MODE_DISCOUNTS.equals(mode) || MODE_BEST.equals(mode)) url.append("&specials=1");
         if (!query.isEmpty()) url.append("&term=").append(encode(query));
         if (!tag.isEmpty()) url.append("&tags=").append(encode(tag));
@@ -51,12 +52,16 @@ public class StoreClient {
             String discountRaw = match(row, "data-discount=\"(\\d+)\"");
             String finalPriceRaw = match(row, "<div class=\"discount_final_price\">([\\s\\S]*?)</div>");
             int discount = discountRaw == null ? 0 : Integer.parseInt(discountRaw);
+            String rowText = cleanText(row).toLowerCase();
+            boolean freeWeekend = rowText.contains("free weekend") || rowText.contains("play for free")
+                    || rowText.contains("бесплатные выходные") || rowText.contains("играть бесплатно");
 
             if (appId == null || title == null || image == null) continue;
             if (MODE_FREE.equals(mode) && discount != 100) continue;
+            if (MODE_WEEKENDS.equals(mode) && !freeWeekend) continue;
             if ((MODE_DISCOUNTS.equals(mode) || MODE_BEST.equals(mode)) && discount < minimumDiscount) continue;
             String price = finalPriceRaw == null ? "Цена не указана" : cleanText(finalPriceRaw);
-            games.add(new GameDeal(appId, cleanText(title), decodeHtml(image), discount, price));
+            games.add(new GameDeal(appId, cleanText(title), decodeHtml(image), discount, price, freeWeekend));
         }
         return new SearchResult(games, total);
     }
@@ -135,7 +140,7 @@ public class StoreClient {
         connection.setConnectTimeout(15_000);
         connection.setReadTimeout(25_000);
         connection.setRequestProperty("Accept-Language", "ru-RU,ru;q=0.9");
-        connection.setRequestProperty("User-Agent", "SteamHunter-Android/0.3");
+        connection.setRequestProperty("User-Agent", "SteamHunter-Android/0.4");
         if (connection.getResponseCode() != 200) throw new IllegalStateException("Steam ответил кодом " + connection.getResponseCode());
         StringBuilder body = new StringBuilder();
         try (BufferedReader reader = new BufferedReader(new InputStreamReader(connection.getInputStream(), StandardCharsets.UTF_8))) {
@@ -171,13 +176,19 @@ public class StoreClient {
         public final String imageUrl;
         public final int discount;
         public final String currentPrice;
+        public final boolean freeWeekend;
 
         public GameDeal(String appId, String title, String imageUrl, int discount, String currentPrice) {
+            this(appId, title, imageUrl, discount, currentPrice, false);
+        }
+
+        public GameDeal(String appId, String title, String imageUrl, int discount, String currentPrice, boolean freeWeekend) {
             this.appId = appId;
             this.title = title;
             this.imageUrl = imageUrl;
             this.discount = discount;
             this.currentPrice = currentPrice;
+            this.freeWeekend = freeWeekend;
         }
     }
 

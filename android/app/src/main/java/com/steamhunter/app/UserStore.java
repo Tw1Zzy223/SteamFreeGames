@@ -96,6 +96,7 @@ public class UserStore {
                 item.put("image", game.imageUrl);
                 item.put("discount", game.discount);
                 item.put("price", game.currentPrice);
+                item.put("weekend", game.freeWeekend);
                 games.put(item);
             }
             root.put("games", games);
@@ -113,7 +114,7 @@ public class UserStore {
             for (int i = 0; i < array.length(); i++) {
                 JSONObject item = array.getJSONObject(i);
                 games.add(new StoreClient.GameDeal(item.optString("id"), item.optString("title"),
-                        item.optString("image"), item.optInt("discount"), item.optString("price")));
+                        item.optString("image"), item.optInt("discount"), item.optString("price"), item.optBoolean("weekend")));
             }
             return new StoreClient.SearchResult(games, root.optInt("total", games.size()));
         } catch (Exception ignored) { return null; }
@@ -163,4 +164,75 @@ public class UserStore {
 
     public Set<String> seen(String key) { return new HashSet<>(preferences.getStringSet(key, new HashSet<>())); }
     public void saveSeen(String key, Set<String> values) { preferences.edit().putStringSet(key, values).apply(); }
+
+    public JSONObject exportSyncData() {
+        JSONObject root = new JSONObject();
+        try {
+            root.put("favorites", gamesArray(favorites()));
+            root.put("viewed", gamesArray(viewed()));
+            root.put("compare", gamesArray(new HashSet<>(comparisonIds())));
+            JSONArray searches = new JSONArray(); for (String item : history()) searches.put(item);
+            root.put("searchHistory", searches);
+            JSONObject settings = new JSONObject();
+            settings.put("theme", isDark() ? "dark" : "light");
+            settings.put("notifications", notifyFree() || notifyDiscounts());
+            settings.put("notifyFree", notifyFree()); settings.put("notifyDiscounts", notifyDiscounts());
+            settings.put("threshold", notifyThreshold()); settings.put("quietHours", quietHours());
+            root.put("settings", settings);
+        } catch (Exception ignored) { }
+        return root;
+    }
+
+    private JSONArray gamesArray(Set<String> ids) {
+        JSONArray array = new JSONArray();
+        for (String id : ids) {
+            JSONObject item = new JSONObject();
+            try { item.put("appId", id); item.put("title", favoriteTitle(id)); } catch (Exception ignored) { }
+            array.put(item);
+        }
+        return array;
+    }
+
+    public void mergeSyncData(JSONObject remote) {
+        if (remote == null) return;
+        Set<String> favoriteIds = favorites();
+        Set<String> viewedIds = viewed();
+        List<String> compareIds = comparisonIds();
+        SharedPreferences.Editor editor = preferences.edit();
+        mergeGameArray(remote.optJSONArray("favorites"), favoriteIds, editor);
+        mergeGameArray(remote.optJSONArray("viewed"), viewedIds, editor);
+        JSONArray compare = remote.optJSONArray("compare");
+        if (compare != null) for (int i = 0; i < compare.length() && compareIds.size() < 2; i++) {
+            String id = compare.optJSONObject(i) == null ? "" : compare.optJSONObject(i).optString("appId");
+            if (!id.isEmpty() && !compareIds.contains(id)) compareIds.add(id);
+        }
+        JSONArray compareJson = new JSONArray(); for (String id : compareIds) compareJson.put(id);
+        List<String> searches = history(); JSONArray remoteSearch = remote.optJSONArray("searchHistory");
+        if (remoteSearch != null) for (int i = 0; i < remoteSearch.length(); i++) {
+            String value = remoteSearch.optString(i); if (!value.isEmpty() && !searches.contains(value)) searches.add(value);
+        }
+        while (searches.size() > 20) searches.remove(searches.size() - 1);
+        JSONArray searchJson = new JSONArray(); for (String value : searches) searchJson.put(value);
+        editor.putStringSet("favorites", favoriteIds).putStringSet("viewed", viewedIds)
+                .putString("comparison_ids", compareJson.toString()).putString("search_history", searchJson.toString());
+        JSONObject settings = remote.optJSONObject("settings");
+        if (settings != null) {
+            if (settings.has("theme")) editor.putBoolean("dark_theme", !"light".equals(settings.optString("theme")));
+            if (settings.has("notifyFree")) editor.putBoolean("notify_free", settings.optBoolean("notifyFree"));
+            if (settings.has("notifyDiscounts")) editor.putBoolean("notify_discounts", settings.optBoolean("notifyDiscounts"));
+            if (settings.has("threshold")) editor.putInt("notify_threshold", settings.optInt("threshold", 80));
+            if (settings.has("quietHours")) editor.putBoolean("quiet_hours", settings.optBoolean("quietHours", true));
+        }
+        editor.apply();
+    }
+
+    private void mergeGameArray(JSONArray array, Set<String> target, SharedPreferences.Editor editor) {
+        if (array == null) return;
+        for (int i = 0; i < array.length(); i++) {
+            JSONObject item = array.optJSONObject(i); if (item == null) continue;
+            String id = item.optString("appId"); if (id.isEmpty()) continue;
+            target.add(id); String title = item.optString("title");
+            if (!title.isEmpty()) editor.putString("favorite_title_" + id, title);
+        }
+    }
 }

@@ -19,6 +19,22 @@ export async function prepareSteamTables() {
     env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_steam_auth_created ON steam_auth_states(created_at)"),
     env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_steam_sessions_device ON steam_sessions(device_id)"),
     env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_steam_sessions_steam ON steam_sessions(steam_id)"),
+    env.DB.prepare(`CREATE TABLE IF NOT EXISTS steam_sync (
+      steam_id TEXT PRIMARY KEY,
+      payload TEXT NOT NULL DEFAULT '{}',
+      updated_at INTEGER NOT NULL
+    )`),
+    env.DB.prepare(`CREATE TABLE IF NOT EXISTS price_history (
+      app_id TEXT NOT NULL,
+      region TEXT NOT NULL,
+      currency TEXT NOT NULL,
+      initial_cents INTEGER NOT NULL,
+      final_cents INTEGER NOT NULL,
+      discount_percent INTEGER NOT NULL,
+      captured_at INTEGER NOT NULL,
+      PRIMARY KEY (app_id, region, captured_at)
+    )`),
+    env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_price_history_app_region_time ON price_history(app_id, region, captured_at)"),
   ]);
 }
 

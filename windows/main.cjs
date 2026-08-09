@@ -1,13 +1,16 @@
-const { app, BrowserWindow, ipcMain, shell, Notification, clipboard } = require("electron");
+const { app, BrowserWindow, ipcMain, shell, Notification, clipboard, Tray, Menu, globalShortcut } = require("electron");
+const { autoUpdater } = require("electron-updater");
 const path = require("node:path");
 const fs = require("node:fs");
 const crypto = require("node:crypto");
 
-const VERSION = "0.3.0";
+const VERSION = "0.4.0";
 const SERVER = "https://steam-hunter-games.pagrishaevich.chatgpt.site";
 const STEAM_SEARCH = "https://store.steampowered.com/search/results/";
 let mainWindow;
 let pendingSteamToken = null;
+let tray = null;
+let isQuitting = false;
 
 const gotLock = app.requestSingleInstanceLock();
 if (!gotLock) app.quit();
@@ -25,7 +28,7 @@ function defaults() {
     compare: [],
     steamToken: "",
     seenFree: [],
-    settings: { theme: "dark", notifications: true, minDiscount: 10 },
+    settings: { theme: "dark", notifications: true, minDiscount: 10, tray: true, autoStart: false, globalHotkeys: true },
   };
 }
 
@@ -92,7 +95,7 @@ async function searchSteam({ mode = "discounts", query = "", start = 0, sort = "
   url.searchParams.set("cc", "us");
   url.searchParams.set("l", "russian");
   url.searchParams.set("sort_by", sort);
-  if (mode === "free") {
+  if (mode === "free" || mode === "weekends") {
     url.searchParams.set("specials", "1");
     url.searchParams.set("maxprice", "free");
   } else if (mode === "discounts" || mode === "best") {
@@ -110,10 +113,13 @@ async function searchSteam({ mode = "discounts", query = "", start = 0, sort = "
     const image = match(row, /class="search_capsule"><img src="([^"]+)"/).replace(/&amp;/g, "&");
     const discount = Number(match(row, /data-discount="(\d+)"/) || 0);
     const price = decodeHtml(match(row, /<div class="discount_final_price">([\s\S]*?)<\/div>/)) || "Цена не указана";
+    const rowText = decodeHtml(row);
+    const freeWeekend = /free weekend|play for free|играть бесплатно|бесплатн(?:ые|ые\s+выходные)|попробовать бесплатно/i.test(rowText);
     if (!appId || !title || !image) continue;
     if (mode === "free" && discount !== 100) continue;
+    if (mode === "weekends" && !freeWeekend) continue;
     if (["discounts", "best"].includes(mode) && discount < Number(minimumDiscount || 0)) continue;
-    games.push({ appId, title, image, discount, price, steamUrl: `https://store.steampowered.com/app/${appId}` });
+    games.push({ appId, title, image, discount, price, freeWeekend, steamUrl: `https://store.steampowered.com/app/${appId}` });
   }
   return { games, total: Number(payload.total_count || 0), start, nextStart: start + 50 };
 }
@@ -201,6 +207,13 @@ function createWindow() {
   });
   mainWindow.loadFile(path.join(__dirname, "index.html"));
   mainWindow.once("ready-to-show", () => mainWindow.show());
+  mainWindow.on("close", (event) => {
+    if (!isQuitting && readStore().settings.tray) {
+      event.preventDefault();
+      mainWindow.hide();
+      if (Notification.isSupported()) new Notification({ title: "Steam Hunter", body: "Приложение продолжает проверять скидки в системном трее." }).show();
+    }
+  });
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     safeExternal(url);
     return { action: "deny" };
@@ -212,6 +225,38 @@ function createWindow() {
     }
   });
   if (pendingSteamToken) mainWindow.webContents.once("did-finish-load", () => mainWindow.webContents.send("steam-authenticated", pendingSteamToken));
+}
+
+function createTray() {
+  tray = new Tray(path.join(__dirname, "icon.png"));
+  tray.setToolTip("Steam Hunter — скидки Steam");
+  tray.setContextMenu(Menu.buildFromTemplate([
+    { label: "Открыть Steam Hunter", click: () => { mainWindow.show(); mainWindow.focus(); } },
+    { label: "Обновить предложения", click: () => mainWindow.webContents.send("shortcut-refresh") },
+    { type: "separator" },
+    { label: "Выйти", click: () => { isQuitting = true; app.quit(); } },
+  ]));
+  tray.on("double-click", () => { mainWindow.show(); mainWindow.focus(); });
+}
+
+function configureShortcuts() {
+  globalShortcut.unregisterAll();
+  if (!readStore().settings.globalHotkeys) return;
+  globalShortcut.register("CommandOrControl+Shift+F", () => { mainWindow.show(); mainWindow.focus(); mainWindow.webContents.send("shortcut-search"); });
+  globalShortcut.register("CommandOrControl+Shift+R", () => { mainWindow.show(); mainWindow.webContents.send("shortcut-refresh"); });
+}
+
+function configureUpdater() {
+  if (!app.isPackaged) return;
+  autoUpdater.autoDownload = true;
+  autoUpdater.autoInstallOnAppQuit = true;
+  autoUpdater.on("checking-for-update", () => mainWindow?.webContents.send("update-status", { state: "checking" }));
+  autoUpdater.on("update-available", (info) => mainWindow?.webContents.send("update-status", { state: "available", version: info.version }));
+  autoUpdater.on("download-progress", (progress) => mainWindow?.webContents.send("update-status", { state: "downloading", percent: Math.round(progress.percent) }));
+  autoUpdater.on("update-downloaded", (info) => mainWindow?.webContents.send("update-status", { state: "downloaded", version: info.version }));
+  autoUpdater.on("update-not-available", () => mainWindow?.webContents.send("update-status", { state: "current" }));
+  autoUpdater.on("error", (error) => mainWindow?.webContents.send("update-status", { state: "error", message: error.message }));
+  setTimeout(() => autoUpdater.checkForUpdates().catch(() => {}), 8000);
 }
 
 function notifyNewFreeGames() {
@@ -242,6 +287,10 @@ app.whenReady().then(() => {
   app.setAppUserModelId("com.steamhunter.desktop");
   app.setAsDefaultProtocolClient("steamhunter");
   createWindow();
+  createTray();
+  app.setLoginItemSettings({ openAtLogin: Boolean(readStore().settings.autoStart), openAsHidden: true });
+  configureShortcuts();
+  configureUpdater();
   const protocol = process.argv.find((value) => value.startsWith("steamhunter://"));
   if (protocol) consumeProtocol(protocol);
   notifyNewFreeGames();
@@ -249,6 +298,7 @@ app.whenReady().then(() => {
 });
 
 app.on("window-all-closed", () => app.quit());
+app.on("will-quit", () => globalShortcut.unregisterAll());
 
 ipcMain.handle("window-action", (_event, action) => {
   if (action === "minimize") mainWindow.minimize();
@@ -277,6 +327,28 @@ ipcMain.handle("steam-friends", async () => {
   if (!token) return { friends: [], isPrivate: false };
   return jsonFetch(`${SERVER}/api/steam/friends`, { headers: { Authorization: `Bearer ${token}` } });
 });
+ipcMain.handle("steam-library", async () => {
+  const token = readStore().steamToken;
+  if (!token) return { games: [], total: 0 };
+  return jsonFetch(`${SERVER}/api/steam/library`, { headers: { Authorization: `Bearer ${token}` } });
+});
+ipcMain.handle("steam-achievements", async (_event, appId) => {
+  const token = readStore().steamToken;
+  if (!token) return { achievements: [], unlocked: 0, total: 0 };
+  return jsonFetch(`${SERVER}/api/steam/achievements?app_id=${encodeURIComponent(String(appId))}`, { headers: { Authorization: `Bearer ${token}` } });
+});
+ipcMain.handle("steam-news", (_event, appId) => jsonFetch(`${SERVER}/api/steam/news?app_id=${encodeURIComponent(String(appId))}`));
+ipcMain.handle("price-history", (_event, appId, region = "us") => jsonFetch(`${SERVER}/api/price-history?app_id=${encodeURIComponent(String(appId))}&region=${encodeURIComponent(String(region))}`));
+ipcMain.handle("sync-pull", async () => {
+  const token = readStore().steamToken;
+  if (!token) return { data: {}, updatedAt: 0 };
+  return jsonFetch(`${SERVER}/api/steam/sync`, { headers: { Authorization: `Bearer ${token}` } });
+});
+ipcMain.handle("sync-push", async (_event, data) => {
+  const token = readStore().steamToken;
+  if (!token) throw new Error("Сначала подключите Steam");
+  return jsonFetch(`${SERVER}/api/steam/sync`, { method: "PUT", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" }, body: JSON.stringify({ data }) });
+});
 ipcMain.handle("steam-logout", async () => {
   const token = readStore().steamToken;
   if (token) await jsonFetch(`${SERVER}/api/steam/me`, { method: "DELETE", headers: { Authorization: `Bearer ${token}` } }).catch(() => {});
@@ -289,7 +361,18 @@ ipcMain.handle("support-send", (_event, payload) => jsonFetch(`${SERVER}/api/sup
   body: JSON.stringify({ ...payload, deviceId: readStore().deviceId }),
 }));
 ipcMain.handle("support-messages", (_event, adminKey) => jsonFetch(`${SERVER}/api/support`, { headers: { "X-Admin-Key": String(adminKey || "") } }));
-ipcMain.handle("check-update", async () => {
-  const release = await jsonFetch("https://api.github.com/repos/Tw1Zzy223/SteamFreeGames/releases/latest");
-  return { current: VERSION, latest: String(release.tag_name || "").replace(/^v/, ""), url: release.html_url };
+ipcMain.handle("desktop-settings", (_event, settings) => {
+  const next = updateStore({ settings: { ...readStore().settings, ...(settings || {}) } });
+  app.setLoginItemSettings({ openAtLogin: Boolean(next.settings.autoStart), openAsHidden: true });
+  configureShortcuts();
+  return next;
 });
+ipcMain.handle("check-update", async () => {
+  if (app.isPackaged) {
+    const result = await autoUpdater.checkForUpdates();
+    return { current: VERSION, latest: result?.updateInfo?.version ?? VERSION, automatic: true };
+  }
+  const release = await jsonFetch("https://api.github.com/repos/Tw1Zzy223/SteamFreeGames/releases/latest");
+  return { current: VERSION, latest: String(release.tag_name || "").replace(/^v/, ""), url: release.html_url, automatic: false };
+});
+ipcMain.handle("install-update", () => { if (app.isPackaged) autoUpdater.quitAndInstall(false, true); return true; });
