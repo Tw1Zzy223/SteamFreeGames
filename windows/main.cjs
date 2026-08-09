@@ -4,7 +4,7 @@ const path = require("node:path");
 const fs = require("node:fs");
 const crypto = require("node:crypto");
 
-const VERSION = "0.4.0";
+const VERSION = "0.2.0";
 const SERVER = "https://steam-hunter-games.pagrishaevich.chatgpt.site";
 const STEAM_SEARCH = "https://store.steampowered.com/search/results/";
 let mainWindow;
@@ -232,6 +232,7 @@ function configureShortcuts() {
 
 function configureUpdater() {
   if (!app.isPackaged) return;
+  autoUpdater.channel = "windows";
   autoUpdater.autoDownload = true;
   autoUpdater.autoInstallOnAppQuit = true;
   autoUpdater.on("checking-for-update", () => mainWindow?.webContents.send("update-status", { state: "checking" }));
