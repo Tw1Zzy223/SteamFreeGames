@@ -7,12 +7,15 @@ const viewInfo = {
   free: ["БЕСПЛАТНО", "Можно забрать бесплатно", "Только временные скидки 100%, без обычных Free-to-Play."],
   discounts: ["СКИДКИ", "Все игры со скидкой", "Ищите игру, выбирайте размер скидки и открывайте её прямо в Steam."],
   all: ["КАТАЛОГ", "Все игры Steam", "Полный каталог подгружается страницами, чтобы программа оставалась быстрой."],
+  weekends: ["БЕСПЛАТНЫЙ ДОСТУП", "Бесплатные выходные", "Играть можно временно: такие игры не остаются в библиотеке навсегда."],
   best: ["ЛУЧШЕЕ", "Лучшие предложения", "Самые заметные скидки с высокими оценками пользователей Steam."],
   favorites: ["МОЯ БИБЛИОТЕКА", "Избранные игры", "Сохранённые игры остаются на этом компьютере и доступны без сети."],
   viewed: ["ИСТОРИЯ", "Просмотренные игры", "Карточки, которые вы недавно открывали."],
   compare: ["СРАВНЕНИЕ", "Сравнить игры", "Цены, отзывы и требования рядом — удобно выбирать перед покупкой."],
   sales: ["КАЛЕНДАРЬ", "Распродажи и фестивали", "Ближайшие официально объявленные события Steam с обратным отсчётом."],
   friends: ["STEAM", "Аккаунт и друзья", "Безопасный вход через официальный сайт Steam. Пароль программе не передаётся."],
+  library: ["МОЙ STEAM", "Моя библиотека Steam", "Игры аккаунта, игровое время и достижения. Требуется открытая библиотека."],
+  news: ["НОВОСТИ", "Новости моих игр", "Последние обновления игр из избранного и библиотеки Steam."],
   support: ["ПОМОЩЬ", "Поддержка Steam Hunter", "Отправьте сообщение разработчику или откройте сообщения владельца."],
   settings: ["ПАРАМЕТРЫ", "Настройки Windows-версии", "Тема, уведомления, обновления и локальные данные приложения."],
 };
@@ -72,7 +75,7 @@ function setHeading(view) {
   document.querySelector("#section-kicker").textContent = kicker;
   document.querySelector("#section-title").textContent = title;
   document.querySelector("#section-subtitle").textContent = subtitle;
-  const catalogView = ["free", "discounts", "all", "best"].includes(view);
+  const catalogView = ["free", "discounts", "all", "best", "weekends"].includes(view);
   document.querySelector("#filterbar").classList.toggle("hidden", !catalogView);
   document.querySelector("#refresh").classList.toggle("hidden", !catalogView);
   document.querySelector("#search").placeholder = catalogView ? "Найти игру в Steam…" : "Поиск доступен в каталоге";
@@ -80,7 +83,7 @@ function setHeading(view) {
 }
 
 function catalogMode() {
-  return ["free", "discounts", "all", "best"].includes(state.view) ? state.view : "discounts";
+  return ["free", "discounts", "all", "best", "weekends"].includes(state.view) ? state.view : "discounts";
 }
 
 async function loadCatalog(reset = true) {
@@ -132,7 +135,7 @@ function gameCard(game) {
       ${game.discount ? `<span class="badge">−${game.discount}%</span>` : ""}
       <div class="card-tools"><button class="favorite ${favorite ? "active" : ""}" title="В избранное">${favorite ? "♥" : "♡"}</button><button class="compare ${compared ? "active" : ""}" title="Сравнить">⇄</button></div>
     </div>
-    <div class="card-body"><span class="card-label">${free ? "МОЖНО ЗАБРАТЬ БЕСПЛАТНО" : game.discount ? `СКИДКА ${game.discount}%` : "ИГРА STEAM"}</span>
+    <div class="card-body"><span class="card-label">${game.freeWeekend ? "БЕСПЛАТНЫЕ ВЫХОДНЫЕ · ВРЕМЕННЫЙ ДОСТУП" : free ? "МОЖНО ЗАБРАТЬ БЕСПЛАТНО" : game.discount ? `СКИДКА ${game.discount}%` : "ИГРА STEAM"}</span>
       <h3 title="${escapeHtml(game.title)}">${escapeHtml(game.title)}</h3>
       <div class="price-line"><span>Цена сейчас</span><strong>${free ? "Бесплатно" : escapeHtml(game.price)}</strong></div>
       <div class="card-actions"><button class="details-btn">Подробнее</button><button class="steam-btn" title="Открыть в Steam">↗</button></div>
@@ -188,12 +191,13 @@ modalLayer.addEventListener("click", (event) => { if (event.target === modalLaye
 async function openDetails(game) {
   openModal('<div class="loading-panel"><div class="spinner"></div><p>Загружаем карточку игры…</p></div>');
   try {
-    const details = await api.details(game.appId);
+    const [details, history] = await Promise.all([api.details(game.appId), api.priceHistory(game.appId, "us").catch(() => ({ points: [] }))]);
     const viewed = [game, ...store.viewed.filter((item) => item.appId !== game.appId)].slice(0, 100);
     await save({ viewed });
     openModal(`<div class="detail-hero"><img src="${escapeHtml(details.image)}" alt=""><div class="detail-title"><h2>${escapeHtml(details.title)}</h2><p>${escapeHtml(details.genres.join(" • ") || "Жанр не указан")}</p></div></div>
       <div class="detail-body"><p class="detail-description">${escapeHtml(details.description)}</p>
       <div class="price-grid">${Object.entries(details.prices).map(([region, price]) => `<div class="price-box"><small>${escapeHtml(region)}</small><strong>${escapeHtml(price)}</strong></div>`).join("")}</div>
+      ${renderPriceHistory(history.points || [])}
       <h3>Отзывы Steam</h3><div class="review-score">${details.reviews.percent}% положительных <small>из ${details.reviews.total.toLocaleString("ru-RU")}</small></div>
       ${details.reviews.samples.map((review) => `<div class="review">${review.positive ? "👍" : "👎"} ${escapeHtml(review.text)}</div>`).join("")}
       <h3>Системные требования</h3><p><strong>Минимальные:</strong> ${escapeHtml(details.requirements.minimum)}</p><p><strong>Рекомендуемые:</strong> ${escapeHtml(details.requirements.recommended)}</p>
@@ -205,6 +209,13 @@ async function openDetails(game) {
       toast("Ссылка скопирована");
     };
   } catch (error) { closeModal(); showError(error); }
+}
+
+function renderPriceHistory(points) {
+  if (!points.length) return '<h3>История цены</h3><p class="detail-description">Первая точка цены сохранена. График появится после следующих проверок.</p>';
+  const max = Math.max(...points.map((item) => Number(item.initialCents || item.finalCents || 1)), 1);
+  const last = points[points.length - 1];
+  return `<h3>История цены · США</h3><div class="price-chart">${points.slice(-30).map((item) => `<i title="${new Date(item.capturedAt).toLocaleString("ru-RU")}" style="height:${Math.max(5, Math.round(Number(item.finalCents || 0) / max * 90))}px"></i>`).join("")}</div><p class="detail-description">Последняя цена: ${(Number(last.finalCents || 0) / 100).toFixed(2)} ${escapeHtml(last.currency)}</p>`;
 }
 
 function renderLocalGames(kind) {
@@ -290,6 +301,88 @@ async function renderFriends() {
   } catch (error) { showError(error); }
 }
 
+function ownedToGame(item) {
+  return {
+    appId: String(item.appid), title: item.name || `Игра ${item.appid}`,
+    image: `https://cdn.akamai.steamstatic.com/steam/apps/${item.appid}/header.jpg`,
+    discount: 0, price: "В библиотеке", steamUrl: `https://store.steampowered.com/app/${item.appid}`,
+    playtime: Number(item.playtime_forever || 0),
+  };
+}
+
+async function renderLibrary() {
+  content.innerHTML = '<div class="loading-panel"><div class="spinner"></div><p>Загружаем библиотеку Steam…</p></div>';
+  const profile = await refreshAccount();
+  if (!profile) {
+    content.innerHTML = '<div class="empty"><h2>Сначала подключите Steam</h2><button class="primary" id="library-login">Подключить Steam</button></div>';
+    document.querySelector("#library-login").onclick = () => api.steamLogin();
+    return;
+  }
+  try {
+    const result = await api.steamLibrary();
+    if (result.isPrivate) {
+      content.innerHTML = '<div class="empty"><h2>Библиотека скрыта</h2><p>Откройте «Доступ к игровой информации» в настройках приватности Steam.</p></div>';
+      return;
+    }
+    const games = (result.games || []).map(ownedToGame);
+    const totalMinutes = games.reduce((sum, game) => sum + game.playtime, 0);
+    content.innerHTML = `<article class="info-card" style="margin-bottom:18px"><h2>${games.length.toLocaleString("ru-RU")} игр · ${Math.round(totalMinutes / 60).toLocaleString("ru-RU")} ч. сыграно</h2><p>Игры отсортированы по общему игровому времени.</p></article><div class="games-grid">${games.map((game) => `${gameCard(game).replace('</div></article>', `<button class="secondary achievements-btn" style="width:100%;margin-top:8px">Достижения · ${Math.round(game.playtime / 60)} ч.</button></div></article>`)}`).join("")}</div>`;
+    bindCards(games);
+    content.querySelectorAll(".achievements-btn").forEach((button) => {
+      const card = button.closest(".game-card");
+      button.onclick = () => showAchievements(card.dataset.appid, games.find((game) => game.appId === card.dataset.appid)?.title || "Игра");
+    });
+  } catch (error) { content.innerHTML = `<div class="empty"><h2>Не удалось открыть библиотеку</h2><p>${escapeHtml(error.message)}</p></div>`; }
+}
+
+async function showAchievements(appId, title) {
+  openModal('<div class="loading-panel"><div class="spinner"></div><p>Загружаем достижения…</p></div>');
+  try {
+    const result = await api.steamAchievements(appId);
+    openModal(`<div class="detail-body"><h2>${escapeHtml(title)}</h2><div class="review-score">${result.unlocked} из ${result.total}</div><p>Получено достижений</p>${result.achievements?.length ? result.achievements.map((item) => `<div class="review">${Number(item.achieved) === 1 ? "🏆" : "○"} <strong>${escapeHtml(item.name || item.apiname)}</strong><br>${escapeHtml(item.description || "")}</div>`).join("") : '<p class="detail-description">Достижения отсутствуют или скрыты настройками Steam.</p>'}</div>`);
+  } catch (error) { closeModal(); showError(error); }
+}
+
+async function renderNews() {
+  content.innerHTML = '<div class="loading-panel"><div class="spinner"></div><p>Собираем новости игр…</p></div>';
+  try {
+    let sources = store.favorites.slice(0, 6);
+    if (!sources.length && store.steamToken) {
+      const library = await api.steamLibrary();
+      sources = (library.games || []).slice(0, 6).map(ownedToGame);
+    }
+    if (!sources.length) {
+      content.innerHTML = '<div class="empty"><h2>Добавьте игры в избранное</h2><p>Или подключите Steam, чтобы видеть новости библиотеки.</p></div>';
+      return;
+    }
+    const groups = await Promise.all(sources.map(async (game) => ({ game, news: (await api.steamNews(game.appId)).news || [] })));
+    const items = groups.flatMap(({ game, news }) => news.map((item) => ({ ...item, game }))).sort((a, b) => Number(b.date || 0) - Number(a.date || 0)).slice(0, 30);
+    content.innerHTML = `<div class="dashboard-grid">${items.map((item) => `<article class="info-card news-card"><span class="card-label">${escapeHtml(item.game.title)}</span><h3>${escapeHtml(item.title)}</h3><p>${escapeHtml(item.contents || "")}</p><small>${new Date(Number(item.date) * 1000).toLocaleDateString("ru-RU")}</small><button class="secondary news-open" data-url="${escapeHtml(item.url)}">Открыть новость</button></article>`).join("")}</div>`;
+    content.querySelectorAll(".news-open").forEach((button) => button.onclick = () => api.external(button.dataset.url));
+  } catch (error) { content.innerHTML = `<div class="empty"><h2>Новости временно недоступны</h2><p>${escapeHtml(error.message)}</p></div>`; }
+}
+
+function mergeGames(left = [], right = []) {
+  return [...new Map([...left, ...right].filter((item) => item?.appId).map((item) => [String(item.appId), item])).values()];
+}
+
+async function synchronize(showMessage = false) {
+  if (!store.steamToken) return;
+  try {
+    const remote = (await api.syncPull()).data || {};
+    const patch = {
+      favorites: mergeGames(remote.favorites, store.favorites),
+      viewed: mergeGames(remote.viewed, store.viewed).slice(0, 100),
+      compare: mergeGames(remote.compare, store.compare).slice(0, 3),
+      searchHistory: [...new Set([...(remote.searchHistory || []), ...store.searchHistory])].slice(0, 20),
+      settings: { ...remote.settings, ...store.settings },
+    };
+    await save(patch);
+    await api.syncPush(patch);
+    if (showMessage) toast("Телефон и компьютер синхронизированы");
+  } catch (error) { if (showMessage) showError(error); }
+}
+
 function renderSupport() {
   content.innerHTML = `<div class="support-layout"><article class="info-card"><h2>Написать разработчику</h2><p>Опишите проблему или предложите новую функцию.</p><form class="form" id="support-form"><input name="name" required maxlength="50" placeholder="Ваше имя"><input name="contact" maxlength="100" placeholder="Контакт для ответа (необязательно)"><textarea name="message" required maxlength="2000" placeholder="Сообщение"></textarea><button class="primary">Отправить</button></form></article>
     <article class="info-card"><h2>Сообщения пользователей</h2><p>Этот раздел предназначен только для владельца Steam Hunter.</p><form class="form" id="admin-form"><input name="key" type="password" required placeholder="Код владельца"><button class="secondary">Открыть сообщения</button></form><div id="admin-messages"></div></article></div>`;
@@ -319,21 +412,45 @@ function renderSettings() {
   };
 }
 
+function enhanceDesktopSettings() {
+  const grid = content.querySelector(".settings-grid");
+  if (!grid) return;
+  grid.insertAdjacentHTML("beforeend", `<article class="info-card"><h2>Работа в Windows</h2>
+    <div class="setting-row"><div><strong>Системный трей</strong><p>Кнопка закрытия прячет Steam Hunter возле часов.</p></div><button class="switch ${store.settings.tray ? "on" : ""}" id="tray-switch"></button></div>
+    <div class="setting-row"><div><strong>Запуск вместе с Windows</strong><p>Автоматически искать новые предложения после входа.</p></div><button class="switch ${store.settings.autoStart ? "on" : ""}" id="autostart-switch"></button></div>
+    <div class="setting-row"><div><strong>Глобальные клавиши</strong><p>Ctrl+Shift+F — поиск, Ctrl+Shift+R — обновить.</p></div><button class="switch ${store.settings.globalHotkeys ? "on" : ""}" id="hotkeys-switch"></button></div></article>
+    <article class="info-card"><h2>Синхронизация</h2><p>Избранное, история и настройки объединяются между Android и Windows после входа в один Steam-аккаунт.</p><button class="primary" id="sync-now">Синхронизировать сейчас</button></article>`);
+  const changeDesktop = async (key) => {
+    store = await api.desktopSettings({ [key]: !store.settings[key] });
+    renderSettings(); enhanceDesktopSettings();
+  };
+  document.querySelector("#tray-switch").onclick = () => changeDesktop("tray");
+  document.querySelector("#autostart-switch").onclick = () => changeDesktop("autoStart");
+  document.querySelector("#hotkeys-switch").onclick = () => changeDesktop("globalHotkeys");
+  document.querySelector("#sync-now").onclick = () => synchronize(true);
+  document.querySelector("#check-update").onclick = async () => {
+    const box = document.querySelector("#update-result"); box.textContent = "Проверяем обновление…";
+    try { await api.checkUpdate(); } catch (error) { box.textContent = error.message; }
+  };
+}
+
 function renderCurrent() {
-  if (["free", "discounts", "all", "best"].includes(state.view)) return renderGames();
+  if (["free", "discounts", "all", "best", "weekends"].includes(state.view)) return renderGames();
   if (["favorites", "viewed"].includes(state.view)) return renderLocalGames(state.view);
   if (state.view === "compare") return renderCompare();
   if (state.view === "sales") return renderSales();
   if (state.view === "friends") return renderFriends();
+  if (state.view === "library") return renderLibrary();
+  if (state.view === "news") return renderNews();
   if (state.view === "support") return renderSupport();
-  if (state.view === "settings") return renderSettings();
+  if (state.view === "settings") { renderSettings(); enhanceDesktopSettings(); }
 }
 
 async function switchView(view) {
   state.view = view;
   document.querySelectorAll("#main-nav button").forEach((button) => button.classList.toggle("active", button.dataset.view === view));
   setHeading(view);
-  if (["free", "discounts", "all", "best"].includes(view)) await loadCatalog(true); else renderCurrent();
+  if (["free", "discounts", "all", "best", "weekends"].includes(view)) await loadCatalog(true); else renderCurrent();
 }
 
 document.querySelectorAll("[data-window]").forEach((button) => button.onclick = () => api.windowAction(button.dataset.window));
@@ -354,13 +471,26 @@ document.querySelector("#search").onkeydown = async (event) => {
 };
 document.querySelector("#sidebar-account").onclick = () => switchView("friends");
 document.querySelector("#profile-button").onclick = () => switchView("friends");
-api.onSteamAuthenticated(async () => { await refreshAccount(); await switchView("friends"); toast("Steam-аккаунт подключён"); });
+api.onSteamAuthenticated(async () => { await refreshAccount(); await synchronize(true); await switchView("friends"); toast("Steam-аккаунт подключён"); });
+api.onShortcutSearch(() => { switchView("discounts"); const search = document.querySelector("#search"); search.disabled = false; search.focus(); });
+api.onShortcutRefresh(() => { if (["free", "discounts", "all", "best", "weekends"].includes(state.view)) loadCatalog(true); else switchView("free"); });
+api.onUpdateStatus((status) => {
+  const box = document.querySelector("#update-result");
+  if (!box) return;
+  if (status.state === "checking") box.textContent = "Проверяем обновление…";
+  if (status.state === "available") box.textContent = `Найдена версия ${status.version}. Начинаем загрузку…`;
+  if (status.state === "downloading") box.textContent = `Загрузка обновления: ${status.percent}%`;
+  if (status.state === "current") box.textContent = "Установлена последняя версия.";
+  if (status.state === "error") box.textContent = `Ошибка обновления: ${status.message}`;
+  if (status.state === "downloaded") { box.innerHTML = `Версия ${escapeHtml(status.version)} готова. <button class="primary" id="install-ready-update">Перезапустить и установить</button>`; document.querySelector("#install-ready-update").onclick = () => api.installUpdate(); }
+});
 
 async function init() {
   store = await api.readStore();
   setTheme(store.settings.theme);
   updateCounters();
   await refreshAccount();
+  await synchronize(false);
   await loadCatalog(true);
   setTimeout(() => document.querySelector("#splash").classList.add("hidden"), 900);
 }
