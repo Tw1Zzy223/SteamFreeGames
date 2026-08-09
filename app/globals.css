@@ -41,11 +41,10 @@ button:focus-visible, a:focus-visible, input:focus-visible {
 .brand { display: flex; align-items: center; gap: 13px; color: var(--ink); text-decoration: none; font-weight: 900; letter-spacing: -.5px; }
 .brand-mark { width: 35px; height: 35px; display: grid; place-items: center; border-radius: 50%; background: var(--ink); color: var(--acid); font-size: 20px; font-style: italic; transform: rotate(-8deg); }
 .nav-actions { display: flex; align-items: center; gap: 10px; }
-.ghost-button, .steam-login, .refresh-button { border: 0; cursor: pointer; transition: transform .2s, background .2s; }
+.ghost-button, .refresh-button { border: 0; cursor: pointer; transition: transform .2s, background .2s; }
 .ghost-button { background: transparent; padding: 12px 15px; font-size: 14px; font-weight: 700; color: #30423c; }
 .notification-dot { width: 8px; height: 8px; display: inline-block; margin-right: 8px; border-radius: 50%; background: var(--acid-dark); box-shadow: 0 0 0 4px rgba(130,197,0,.12); }
-.steam-login { background: var(--ink); color: #fff; border-radius: 8px; padding: 13px 18px; font-size: 14px; font-weight: 800; }
-.steam-login:hover, .claim-button:hover, .primary-button:hover { transform: translateY(-2px); }
+.claim-button:hover, .primary-button:hover { transform: translateY(-2px); }
 
 .hero {
   min-height: 510px;
@@ -131,7 +130,6 @@ footer { display: flex; justify-content: space-between; gap: 20px; padding: 28px
   .topbar { height: auto; min-height: 70px; padding: 13px 18px; }
   .brand span:last-child { display: none; }
   .ghost-button { font-size: 0; padding: 12px 6px; }.notification-dot { margin: 0; }
-  .steam-login { padding: 11px 13px; }
   .hero { min-height: 480px; padding: 55px 20px; }
   h1 { letter-spacing: -2.7px; }
   .hero-description { font-size: 16px; }

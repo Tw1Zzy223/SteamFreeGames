@@ -112,12 +112,6 @@ export function DealsDashboard() {
     }
   }
 
-  function explainSteamLogin() {
-    setNotice(
-      "Безопасное подключение Steam добавим через Steam OpenID. Пароль от Steam здесь вводить не нужно.",
-    );
-  }
-
   const visibleDeals = useMemo(() => {
     const normalized = query.trim().toLocaleLowerCase("ru");
     if (!normalized) return deals;
@@ -137,9 +131,6 @@ export function DealsDashboard() {
           <button type="button" className="ghost-button" onClick={enableNotifications}>
             <span className="notification-dot" aria-hidden="true" />
             {notificationsEnabled ? "Уведомления включены" : "Включить уведомления"}
-          </button>
-          <button type="button" className="steam-login" onClick={explainSteamLogin}>
-            Подключить Steam
           </button>
         </div>
       </nav>

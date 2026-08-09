@@ -1,5 +1,4 @@
 import { env } from "cloudflare:workers";
-import { prepareSteamTables } from "../steam/_shared";
 
 const REGIONS = new Set(["us", "de", "ru", "kz"]);
 
@@ -8,7 +7,19 @@ export async function GET(request: Request) {
   const appId = url.searchParams.get("app_id") ?? "";
   const region = (url.searchParams.get("region") ?? "us").toLowerCase();
   if (!/^\d+$/.test(appId) || !REGIONS.has(region)) return Response.json({ error: "Некорректные параметры" }, { status: 400 });
-  await prepareSteamTables();
+  await env.DB.batch([
+    env.DB.prepare(`CREATE TABLE IF NOT EXISTS price_history (
+      app_id TEXT NOT NULL,
+      region TEXT NOT NULL,
+      currency TEXT NOT NULL,
+      initial_cents INTEGER NOT NULL,
+      final_cents INTEGER NOT NULL,
+      discount_percent INTEGER NOT NULL,
+      captured_at INTEGER NOT NULL,
+      PRIMARY KEY (app_id, region, captured_at)
+    )`),
+    env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_price_history_app_region_time ON price_history(app_id, region, captured_at)"),
+  ]);
   const latest = await env.DB.prepare("SELECT captured_at AS capturedAt FROM price_history WHERE app_id = ? AND region = ? ORDER BY captured_at DESC LIMIT 1")
     .bind(appId, region).first<{ capturedAt: number }>();
   if (!latest || Date.now() - latest.capturedAt > 60 * 60 * 1000) {

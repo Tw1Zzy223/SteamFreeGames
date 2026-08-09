@@ -8,7 +8,6 @@ const VERSION = "0.4.0";
 const SERVER = "https://steam-hunter-games.pagrishaevich.chatgpt.site";
 const STEAM_SEARCH = "https://store.steampowered.com/search/results/";
 let mainWindow;
-let pendingSteamToken = null;
 let tray = null;
 let isQuitting = false;
 
@@ -26,7 +25,6 @@ function defaults() {
     viewed: [],
     searchHistory: [],
     compare: [],
-    steamToken: "",
     seenFree: [],
     settings: { theme: "dark", notifications: true, minDiscount: 10, tray: true, autoStart: false, globalHotkeys: true },
   };
@@ -174,20 +172,6 @@ function safeExternal(url) {
   return shell.openExternal(url);
 }
 
-function consumeProtocol(url) {
-  try {
-    const parsed = new URL(url);
-    if (parsed.protocol !== "steamhunter:" || parsed.hostname !== "steam-auth") return;
-    const token = parsed.searchParams.get("token");
-    if (!token || !/^[a-f0-9]{64}$/i.test(token)) return;
-    updateStore({ steamToken: token });
-    pendingSteamToken = token;
-    mainWindow?.webContents.send("steam-authenticated", token);
-    mainWindow?.show();
-    mainWindow?.focus();
-  } catch { /* Ссылки других программ игнорируем. */ }
-}
-
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1440,
@@ -272,27 +256,21 @@ function notifyNewFreeGames() {
   }).catch(() => {});
 }
 
-app.on("second-instance", (_event, argv) => {
-  const protocol = argv.find((value) => value.startsWith("steamhunter://"));
-  if (protocol) consumeProtocol(protocol);
+app.on("second-instance", () => {
   if (mainWindow) {
     if (mainWindow.isMinimized()) mainWindow.restore();
     mainWindow.show();
     mainWindow.focus();
   }
 });
-app.on("open-url", (event, url) => { event.preventDefault(); consumeProtocol(url); });
 
 app.whenReady().then(() => {
   app.setAppUserModelId("com.steamhunter.desktop");
-  app.setAsDefaultProtocolClient("steamhunter");
   createWindow();
   createTray();
   app.setLoginItemSettings({ openAtLogin: Boolean(readStore().settings.autoStart), openAsHidden: true });
   configureShortcuts();
   configureUpdater();
-  const protocol = process.argv.find((value) => value.startsWith("steamhunter://"));
-  if (protocol) consumeProtocol(protocol);
   notifyNewFreeGames();
   setInterval(notifyNewFreeGames, 60 * 60 * 1000).unref();
 });
@@ -312,49 +290,8 @@ ipcMain.handle("copy", (_event, value) => { clipboard.writeText(String(value)); 
 ipcMain.handle("open-steam", (_event, appId) => safeExternal(`steam://store/${String(appId).replace(/\D/g, "")}`));
 ipcMain.handle("store-read", () => readStore());
 ipcMain.handle("store-write", (_event, patch) => updateStore(patch || {}));
-ipcMain.handle("steam-login", async () => {
-  const store = readStore();
-  await safeExternal(`${SERVER}/api/steam/login?device_id=${encodeURIComponent(store.deviceId)}`);
-  return true;
-});
-ipcMain.handle("steam-me", async () => {
-  const token = readStore().steamToken;
-  if (!token) return null;
-  return jsonFetch(`${SERVER}/api/steam/me`, { headers: { Authorization: `Bearer ${token}` } });
-});
-ipcMain.handle("steam-friends", async () => {
-  const token = readStore().steamToken;
-  if (!token) return { friends: [], isPrivate: false };
-  return jsonFetch(`${SERVER}/api/steam/friends`, { headers: { Authorization: `Bearer ${token}` } });
-});
-ipcMain.handle("steam-library", async () => {
-  const token = readStore().steamToken;
-  if (!token) return { games: [], total: 0 };
-  return jsonFetch(`${SERVER}/api/steam/library`, { headers: { Authorization: `Bearer ${token}` } });
-});
-ipcMain.handle("steam-achievements", async (_event, appId) => {
-  const token = readStore().steamToken;
-  if (!token) return { achievements: [], unlocked: 0, total: 0 };
-  return jsonFetch(`${SERVER}/api/steam/achievements?app_id=${encodeURIComponent(String(appId))}`, { headers: { Authorization: `Bearer ${token}` } });
-});
 ipcMain.handle("steam-news", (_event, appId) => jsonFetch(`${SERVER}/api/steam/news?app_id=${encodeURIComponent(String(appId))}`));
 ipcMain.handle("price-history", (_event, appId, region = "us") => jsonFetch(`${SERVER}/api/price-history?app_id=${encodeURIComponent(String(appId))}&region=${encodeURIComponent(String(region))}`));
-ipcMain.handle("sync-pull", async () => {
-  const token = readStore().steamToken;
-  if (!token) return { data: {}, updatedAt: 0 };
-  return jsonFetch(`${SERVER}/api/steam/sync`, { headers: { Authorization: `Bearer ${token}` } });
-});
-ipcMain.handle("sync-push", async (_event, data) => {
-  const token = readStore().steamToken;
-  if (!token) throw new Error("Сначала подключите Steam");
-  return jsonFetch(`${SERVER}/api/steam/sync`, { method: "PUT", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" }, body: JSON.stringify({ data }) });
-});
-ipcMain.handle("steam-logout", async () => {
-  const token = readStore().steamToken;
-  if (token) await jsonFetch(`${SERVER}/api/steam/me`, { method: "DELETE", headers: { Authorization: `Bearer ${token}` } }).catch(() => {});
-  updateStore({ steamToken: "" });
-  return true;
-});
 ipcMain.handle("support-send", (_event, payload) => jsonFetch(`${SERVER}/api/support`, {
   method: "POST",
   headers: { "Content-Type": "application/json" },
