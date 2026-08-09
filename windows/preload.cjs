@@ -1,7 +1,7 @@
 const { contextBridge, ipcRenderer } = require("electron");
 
 contextBridge.exposeInMainWorld("steamHunter", {
-  version: "0.3.0",
+  version: "0.1.0",
   windowAction: (action) => ipcRenderer.invoke("window-action", action),
   catalog: (options) => ipcRenderer.invoke("catalog", options),
   details: (appId) => ipcRenderer.invoke("details", appId),
