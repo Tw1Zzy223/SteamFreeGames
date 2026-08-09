@@ -75,6 +75,7 @@ public class MainActivity extends Activity {
     private Button loadMoreButton;
     private Button freeTab;
     private Button discountsTab;
+    private Button bestTab;
     private Button allTab;
     private EditText searchInput;
     private Spinner historySpinner;
@@ -180,8 +181,8 @@ public class MainActivity extends Activity {
         LinearLayout top = horizontal();
         TextView brand = text("◉  STEAM HUNTER", 18, accent, Typeface.BOLD);
         top.addView(brand, weighted(-2, 1f, 0));
-        Button favorites = smallButton("★ Избранное");
-        favorites.setOnClickListener(v -> showFavorites());
+        Button favorites = smallButton("♥ Желаемое");
+        favorites.setOnClickListener(v -> showWishlist());
         top.addView(favorites, wrap(0));
         Button settings = smallButton("⚙");
         settings.setContentDescription("Настройки");
@@ -203,12 +204,15 @@ public class MainActivity extends Activity {
         LinearLayout tabs = horizontal();
         freeTab = button("Бесплатно", panel, accent);
         discountsTab = button("Скидки", panel, accent);
+        bestTab = button("Лучшее", panel, accent);
         allTab = button("Все игры", panel, accent);
         freeTab.setOnClickListener(v -> selectTab(StoreClient.MODE_FREE));
         discountsTab.setOnClickListener(v -> selectTab(StoreClient.MODE_DISCOUNTS));
+        bestTab.setOnClickListener(v -> selectTab(StoreClient.MODE_BEST));
         allTab.setOnClickListener(v -> selectTab(StoreClient.MODE_ALL));
         tabs.addView(freeTab, weighted(46, 1f, 0));
         tabs.addView(discountsTab, weighted(46, 1f, 7));
+        tabs.addView(bestTab, weighted(46, 1f, 7));
         tabs.addView(allTab, weighted(46, 1f, 7));
         page.addView(tabs);
 
@@ -263,6 +267,24 @@ public class MainActivity extends Activity {
         tools.addView(notification, weighted(44, 1f, 7));
         page.addView(tools, margins(-1, -2, 0, 11, 0, 0));
 
+        HorizontalScrollView servicesScroll = new HorizontalScrollView(this);
+        servicesScroll.setHorizontalScrollBarEnabled(false);
+        LinearLayout services = horizontal();
+        Button wishlist = button("♥ Желаемое", panelStrong, primaryText);
+        wishlist.setOnClickListener(v -> showWishlist());
+        services.addView(wishlist, fixed(126, 44, 0));
+        Button compare = button("⇄ Сравнение", panelStrong, primaryText);
+        compare.setOnClickListener(v -> showComparison());
+        services.addView(compare, fixed(126, 44, 7));
+        Button sales = button("◷ Распродажи", panelStrong, primaryText);
+        sales.setOnClickListener(v -> showSalesCalendar());
+        services.addView(sales, fixed(136, 44, 7));
+        Button support = button("✉ Поддержка", panelStrong, primaryText);
+        support.setOnClickListener(v -> showSupport());
+        services.addView(support, fixed(126, 44, 7));
+        servicesScroll.addView(services);
+        page.addView(servicesScroll, margins(-1, 52, 0, 0, 0, 13));
+
         sectionTitle = text("Бесплатно прямо сейчас", 23, primaryText, Typeface.BOLD);
         page.addView(sectionTitle, margins(-1, -2, 0, 24, 0, 5));
         statusText = text("Подключаемся к Steam…", 12, secondaryText, Typeface.NORMAL);
@@ -292,10 +314,13 @@ public class MainActivity extends Activity {
         searchInput.setText("");
         styleTab(freeTab, StoreClient.MODE_FREE.equals(mode));
         styleTab(discountsTab, StoreClient.MODE_DISCOUNTS.equals(mode));
+        styleTab(bestTab, StoreClient.MODE_BEST.equals(mode));
         styleTab(allTab, StoreClient.MODE_ALL.equals(mode));
         searchPanel.setVisibility(StoreClient.MODE_FREE.equals(mode) ? View.GONE : View.VISIBLE);
         discountSpinner.setVisibility(StoreClient.MODE_DISCOUNTS.equals(mode) ? View.VISIBLE : View.GONE);
-        sectionTitle.setText(StoreClient.MODE_FREE.equals(mode) ? "Бесплатно прямо сейчас" : StoreClient.MODE_DISCOUNTS.equals(mode) ? "Все скидки Steam" : "Все игры Steam");
+        sectionTitle.setText(StoreClient.MODE_FREE.equals(mode) ? "Бесплатно прямо сейчас"
+                : StoreClient.MODE_DISCOUNTS.equals(mode) ? "Все скидки Steam"
+                : StoreClient.MODE_BEST.equals(mode) ? "Лучшие предложения" : "Все игры Steam");
         loadDeals(true, false);
     }
 
@@ -344,9 +369,10 @@ public class MainActivity extends Activity {
         String mode = currentMode;
         String query = currentQuery;
         int start = currentStart;
-        String sort = SORT_VALUES[sortSpinner.getSelectedItemPosition()];
+        String sort = StoreClient.MODE_BEST.equals(mode) ? "Reviews_DESC" : SORT_VALUES[sortSpinner.getSelectedItemPosition()];
         String tag = GENRE_TAGS[genreSpinner.getSelectedItemPosition()];
-        int minimum = StoreClient.MODE_DISCOUNTS.equals(mode) ? DISCOUNT_VALUES[discountSpinner.getSelectedItemPosition()] : 0;
+        int minimum = StoreClient.MODE_DISCOUNTS.equals(mode) ? DISCOUNT_VALUES[discountSpinner.getSelectedItemPosition()]
+                : StoreClient.MODE_BEST.equals(mode) ? 50 : 0;
         int generation = requestGeneration;
 
         executor.execute(() -> {
@@ -354,11 +380,20 @@ public class MainActivity extends Activity {
                 StoreClient.SearchResult result = client.search(mode, query, start, sort, tag, minimum);
                 runOnUiThread(() -> {
                     if (generation == requestGeneration && mode.equals(currentMode) && query.equals(currentQuery)) {
+                        if (reset) store.saveOfflinePage(mode, result);
                         showDeals(result, reset);
                     }
                 });
             } catch (Exception error) {
-                runOnUiThread(() -> { if (generation == requestGeneration) showError(); });
+                runOnUiThread(() -> {
+                    if (generation != requestGeneration) return;
+                    StoreClient.SearchResult cached = reset ? store.offlinePage(mode) : null;
+                    if (cached != null) {
+                        showDeals(cached, true);
+                        statusText.setText("Офлайн-режим · показаны последние сохранённые данные");
+                        loadMoreButton.setVisibility(View.GONE);
+                    } else showError();
+                });
             }
         });
     }
@@ -412,12 +447,15 @@ public class MainActivity extends Activity {
         card.addView(mainActions, margins(-1, -2, 0, 13, 0, 0));
 
         LinearLayout secondary = horizontal();
-        Button favorite = smallButton(store.isFavorite(game.appId) ? "★ В избранном" : "☆ В избранное");
-        favorite.setOnClickListener(v -> { store.toggleFavorite(game); favorite.setText(store.isFavorite(game.appId) ? "★ В избранном" : "☆ В избранное"); });
+        Button favorite = smallButton(store.isWishlisted(game.appId) ? "♥ В желаемом" : "♡ В желаемое");
+        favorite.setOnClickListener(v -> { store.toggleWishlist(game); favorite.setText(store.isWishlisted(game.appId) ? "♥ В желаемом" : "♡ В желаемое"); });
         secondary.addView(favorite, weighted(40, 1f, 0));
-        Button share = smallButton("Поделиться");
-        share.setOnClickListener(v -> shareGame(game));
-        secondary.addView(share, weighted(40, 1f, 7));
+        Button alert = smallButton("🔔 Цена");
+        alert.setOnClickListener(v -> showSmartAlert(game));
+        secondary.addView(alert, weighted(32, .7f, 7));
+        Button compare = smallButton(store.comparisonIds().contains(game.appId) ? "✓ Сравнить" : "⇄ Сравнить");
+        compare.setOnClickListener(v -> { store.toggleComparison(game); compare.setText(store.comparisonIds().contains(game.appId) ? "✓ Сравнить" : "⇄ Сравнить"); });
+        secondary.addView(compare, weighted(34, .8f, 7));
         card.addView(secondary, margins(-1, -2, 0, 7, 0, 0));
         card.setLayoutParams(margins(-1, -2, 0, 0, 0, 14));
         return card;
@@ -441,10 +479,20 @@ public class MainActivity extends Activity {
         content.setPadding(dp(18), dp(6), dp(18), dp(8));
         content.addView(text(details.genres, 13, accent, Typeface.BOLD));
         content.addView(text(details.description, 14, primaryText, Typeface.NORMAL), margins(-1, -2, 0, 8, 0, 13));
+        String reviewLine = details.reviews.totalReviews == 0 ? "Отзывов пока нет"
+                : "👍 " + details.reviews.positivePercent + "% положительных · " + details.reviews.totalReviews + " отзывов";
+        content.addView(text(reviewLine, 16, accent, Typeface.BOLD), margins(-1, -2, 0, 8, 0, 8));
+        for (String review : details.reviews.samples) {
+            content.addView(text(review, 12, secondaryText, Typeface.NORMAL), margins(-1, -2, 0, 4, 0, 6));
+        }
         content.addView(text("Цены по регионам", 18, primaryText, Typeface.BOLD));
         for (Map.Entry<String, String> entry : details.regionalPrices.entrySet()) {
             content.addView(text(entry.getKey() + ":  " + entry.getValue(), 15, primaryText, Typeface.NORMAL), margins(-1, -2, 0, 5, 0, 0));
         }
+        content.addView(text("Минимальные требования", 17, primaryText, Typeface.BOLD), margins(-1, -2, 0, 14, 0, 4));
+        content.addView(text(details.minimumRequirements, 12, secondaryText, Typeface.NORMAL));
+        content.addView(text("Рекомендуемые требования", 17, primaryText, Typeface.BOLD), margins(-1, -2, 0, 12, 0, 4));
+        content.addView(text(details.recommendedRequirements, 12, secondaryText, Typeface.NORMAL));
         content.addView(text("Цены могут отличаться из-за региональных правил Steam. Покупка подтверждается только в Steam.", 11, secondaryText, Typeface.NORMAL), margins(-1, -2, 0, 12, 0, 0));
         ScrollView scroll = new ScrollView(this); scroll.addView(content);
         new AlertDialog.Builder(this).setTitle(details.title).setView(scroll)
@@ -454,18 +502,191 @@ public class MainActivity extends Activity {
     }
 
     private void showFavorites() {
+        showWishlist();
+    }
+
+    private void showWishlist() {
         Set<String> favorites = store.favorites();
         if (favorites.isEmpty()) {
-            new AlertDialog.Builder(this).setTitle("Избранное").setMessage("Нажмите ☆ на карточке игры, и она появится здесь.").setPositiveButton("Понятно", null).show();
+            new AlertDialog.Builder(this).setTitle("Список желаемого").setMessage("Нажмите ♡ на карточке игры, и она появится здесь.").setPositiveButton("Понятно", null).show();
             return;
         }
         List<String> ids = new ArrayList<>(favorites);
         String[] titles = new String[ids.size()];
         for (int i = 0; i < ids.size(); i++) titles[i] = store.favoriteTitle(ids.get(i));
-        new AlertDialog.Builder(this).setTitle("Избранные игры").setItems(titles, (dialog, index) -> {
+        new AlertDialog.Builder(this).setTitle("Список желаемого").setItems(titles, (dialog, index) -> {
             String id = ids.get(index);
             showDetails(new StoreClient.GameDeal(id, titles[index], "", 0, "Откройте подробности"));
         }).setNegativeButton("Закрыть", null).show();
+    }
+
+    private void showSmartAlert(StoreClient.GameDeal game) {
+        String[] labels = {"50%", "70%", "80%", "90%", "100% — бесплатно"};
+        int[] values = {50, 70, 80, 90, 100};
+        Spinner threshold = spinner(labels);
+        int current = store.smartAlertDiscount(game.appId);
+        for (int i = 0; i < values.length; i++) if (values[i] == current) threshold.setSelection(i);
+        LinearLayout content = vertical();
+        content.setPadding(dp(20), dp(8), dp(20), 0);
+        content.addView(text("Сообщить, когда скидка достигнет:", 14, primaryText, Typeface.BOLD));
+        content.addView(threshold, margins(-1, 48, 0, 8, 0, 0));
+        new AlertDialog.Builder(this).setTitle("Умное уведомление · " + game.title).setView(content)
+                .setPositiveButton("Сохранить", (d, w) -> {
+                    store.saveSmartAlert(game, values[threshold.getSelectedItemPosition()]);
+                    if (!store.isWishlisted(game.appId)) store.toggleWishlist(game);
+                    DealWorker.schedule(this);
+                })
+                .setNeutralButton("Удалить", (d, w) -> store.removeSmartAlert(game.appId))
+                .setNegativeButton("Отмена", null).show();
+    }
+
+    private void showSalesCalendar() {
+        LinearLayout content = vertical();
+        content.setPadding(dp(18), dp(6), dp(18), dp(12));
+        for (SaleCalendar.Event event : SaleCalendar.upcoming()) {
+            LinearLayout card = vertical();
+            card.setPadding(dp(13), dp(11), dp(13), dp(11));
+            card.setBackground(rounded(panelStrong, 10, border));
+            card.addView(text(event.type.toUpperCase(new Locale("ru", "RU")), 10, accent, Typeface.BOLD));
+            card.addView(text(event.title, 18, primaryText, Typeface.BOLD));
+            card.addView(text(event.dates(), 12, secondaryText, Typeface.NORMAL));
+            card.addView(text(event.countdown(), 13, accent, Typeface.BOLD), margins(-1, -2, 0, 5, 0, 0));
+            content.addView(card, margins(-1, -2, 0, 0, 0, 9));
+        }
+        ScrollView scroll = new ScrollView(this); scroll.addView(content);
+        new AlertDialog.Builder(this).setTitle("Распродажи и фестивали Steam").setView(scroll)
+                .setPositiveButton("Закрыть", null).show();
+    }
+
+    private void showComparison() {
+        List<String> ids = store.comparisonIds();
+        if (ids.size() < 2) {
+            new AlertDialog.Builder(this).setTitle("Сравнение игр")
+                    .setMessage("Добавьте две игры кнопкой «⇄ Сравнить» на карточках.")
+                    .setPositiveButton("Понятно", null).show();
+            return;
+        }
+        AlertDialog loading = new AlertDialog.Builder(this).setTitle("Сравнение игр")
+                .setMessage("Загружаем цены, отзывы и требования…").setNegativeButton("Закрыть", null).show();
+        executor.execute(() -> {
+            try {
+                StoreClient.GameDetails first = client.details(ids.get(0));
+                StoreClient.GameDetails second = client.details(ids.get(1));
+                runOnUiThread(() -> { loading.dismiss(); showComparisonResult(first, second); });
+            } catch (Exception error) {
+                runOnUiThread(() -> { loading.dismiss(); showErrorDialog("Не удалось сравнить игры", "Steam временно не вернул подробности."); });
+            }
+        });
+    }
+
+    private void showComparisonResult(StoreClient.GameDetails first, StoreClient.GameDetails second) {
+        LinearLayout content = vertical(); content.setPadding(dp(16), dp(4), dp(16), dp(10));
+        addComparisonGame(content, first);
+        content.addView(text("ПРОТИВ", 12, accent, Typeface.BOLD), margins(-1, -2, 0, 14, 0, 14));
+        addComparisonGame(content, second);
+        String verdict;
+        if (first.reviews.totalReviews == 0 || second.reviews.totalReviews == 0) verdict = "Недостаточно отзывов для вывода.";
+        else if (first.reviews.positivePercent == second.reviews.positivePercent) verdict = "У игр одинаковый процент положительных отзывов.";
+        else {
+            StoreClient.GameDetails winner = first.reviews.positivePercent > second.reviews.positivePercent ? first : second;
+            verdict = "По отзывам игроки чаще рекомендуют «" + winner.title + "». Решение о покупке всё равно остаётся за вами.";
+        }
+        content.addView(text(verdict, 14, accent, Typeface.BOLD), margins(-1, -2, 0, 14, 0, 0));
+        ScrollView scroll = new ScrollView(this); scroll.addView(content);
+        new AlertDialog.Builder(this).setTitle("Сравнение").setView(scroll)
+                .setPositiveButton("Закрыть", null)
+                .setNeutralButton("Очистить", (d, w) -> store.clearComparison()).show();
+    }
+
+    private void addComparisonGame(LinearLayout content, StoreClient.GameDetails game) {
+        content.addView(text(game.title, 21, primaryText, Typeface.BOLD));
+        content.addView(text("👍 " + game.reviews.positivePercent + "% · " + game.reviews.totalReviews + " отзывов", 14, accent, Typeface.BOLD));
+        content.addView(text(game.genres, 12, secondaryText, Typeface.NORMAL));
+        String price = game.regionalPrices.get("Россия");
+        content.addView(text("Цена: " + (price == null ? "нет данных" : price), 14, primaryText, Typeface.BOLD));
+        content.addView(text("Минимальные: " + game.minimumRequirements, 11, secondaryText, Typeface.NORMAL));
+    }
+
+    private void showErrorDialog(String title, String message) {
+        new AlertDialog.Builder(this).setTitle(title).setMessage(message).setPositiveButton("Понятно", null).show();
+    }
+
+    private void showSupport() {
+        new AlertDialog.Builder(this).setTitle("Поддержка Steam Hunter")
+                .setItems(new String[]{"Написать в поддержку", "Сообщения пользователей (владелец)"}, (d, which) -> {
+                    if (which == 0) showSupportForm(); else showOwnerMessagesLogin();
+                }).setNegativeButton("Закрыть", null).show();
+    }
+
+    private void showSupportForm() {
+        LinearLayout content = vertical(); content.setPadding(dp(20), dp(5), dp(20), 0);
+        EditText name = input("Ваше имя");
+        EditText contact = input("Email или Telegram — необязательно");
+        EditText message = input("Опишите вопрос или ошибку");
+        message.setSingleLine(false); message.setMinLines(4); message.setGravity(Gravity.TOP);
+        content.addView(name, margins(-1, 50, 0, 5, 0, 7));
+        content.addView(contact, margins(-1, 50, 0, 0, 0, 7));
+        content.addView(message, margins(-1, 120, 0, 0, 0, 0));
+        AlertDialog dialog = new AlertDialog.Builder(this).setTitle("Новое обращение").setView(content)
+                .setPositiveButton("Отправить", null).setNegativeButton("Отмена", null).create();
+        dialog.setOnShowListener(ignored -> dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> {
+            String author = name.getText().toString().trim();
+            String body = message.getText().toString().trim();
+            if (author.isEmpty() || body.length() < 5) {
+                message.setError("Напишите сообщение не короче 5 символов"); return;
+            }
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setEnabled(false);
+            String deviceId = android.provider.Settings.Secure.getString(getContentResolver(), android.provider.Settings.Secure.ANDROID_ID);
+            executor.execute(() -> {
+                try {
+                    new SupportClient().send(deviceId, author, contact.getText().toString().trim(), body);
+                    runOnUiThread(() -> { dialog.dismiss(); showErrorDialog("Сообщение отправлено", "Обращение появилось в разделе владельца."); });
+                } catch (Exception error) {
+                    runOnUiThread(() -> { dialog.getButton(AlertDialog.BUTTON_POSITIVE).setEnabled(true); message.setError(error.getMessage()); });
+                }
+            });
+        }));
+        dialog.show();
+    }
+
+    private void showOwnerMessagesLogin() {
+        EditText key = input("Код владельца");
+        key.setInputType(android.text.InputType.TYPE_CLASS_TEXT | android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD);
+        LinearLayout content = vertical(); content.setPadding(dp(20), dp(6), dp(20), 0); content.addView(key);
+        new AlertDialog.Builder(this).setTitle("Сообщения пользователей").setView(content)
+                .setPositiveButton("Открыть", (d, w) -> loadOwnerMessages(key.getText().toString().trim()))
+                .setNegativeButton("Отмена", null).show();
+    }
+
+    private void loadOwnerMessages(String key) {
+        AlertDialog loading = new AlertDialog.Builder(this).setTitle("Сообщения пользователей")
+                .setMessage("Загружаем обращения…").setNegativeButton("Закрыть", null).show();
+        executor.execute(() -> {
+            try {
+                List<SupportClient.Message> messages = new SupportClient().messages(key);
+                runOnUiThread(() -> { loading.dismiss(); showOwnerMessages(messages); });
+            } catch (Exception error) {
+                runOnUiThread(() -> { loading.dismiss(); showErrorDialog("Не удалось открыть сообщения", error.getMessage()); });
+            }
+        });
+    }
+
+    private void showOwnerMessages(List<SupportClient.Message> messages) {
+        if (messages.isEmpty()) { showErrorDialog("Сообщения пользователей", "Новых обращений пока нет."); return; }
+        LinearLayout content = vertical(); content.setPadding(dp(16), dp(4), dp(16), dp(10));
+        DateFormat date = DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT, new Locale("ru", "RU"));
+        for (SupportClient.Message message : messages) {
+            LinearLayout card = vertical(); card.setPadding(dp(12), dp(10), dp(12), dp(10));
+            card.setBackground(rounded(panelStrong, 10, border));
+            card.addView(text(message.name, 17, primaryText, Typeface.BOLD));
+            if (!message.contact.isEmpty()) card.addView(text(message.contact, 12, accent, Typeface.NORMAL));
+            card.addView(text(message.message, 14, primaryText, Typeface.NORMAL), margins(-1, -2, 0, 6, 0, 5));
+            card.addView(text(date.format(new Date(message.createdAt)), 10, secondaryText, Typeface.NORMAL));
+            content.addView(card, margins(-1, -2, 0, 0, 0, 9));
+        }
+        ScrollView scroll = new ScrollView(this); scroll.addView(content);
+        new AlertDialog.Builder(this).setTitle("Сообщения пользователей").setView(scroll)
+                .setPositiveButton("Закрыть", null).show();
     }
 
     private void showSettings() {
@@ -495,6 +716,13 @@ public class MainActivity extends Activity {
 
     private CheckBox checkbox(String label, boolean checked) {
         CheckBox box = new CheckBox(this); box.setText(label); box.setChecked(checked); return box;
+    }
+
+    private EditText input(String hint) {
+        EditText input = new EditText(this);
+        input.setHint(hint); input.setHintTextColor(secondaryText); input.setTextColor(primaryText);
+        input.setTextSize(14); input.setPadding(dp(12), dp(8), dp(12), dp(8));
+        input.setBackground(rounded(panel, 9, border)); return input;
     }
 
     private void openSteam(StoreClient.GameDeal game) {
