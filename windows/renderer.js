@@ -12,7 +12,6 @@ const viewInfo = {
   viewed: ["ИСТОРИЯ", "Просмотренные игры", "Карточки, которые вы недавно открывали."],
   compare: ["СРАВНЕНИЕ", "Сравнить игры", "Цены, отзывы и требования рядом — удобно выбирать перед покупкой."],
   sales: ["КАЛЕНДАРЬ", "Распродажи и фестивали", "Ближайшие официально объявленные события Steam с обратным отсчётом."],
-  friends: ["STEAM", "Аккаунт и друзья", "Безопасный вход через официальный сайт Steam. Пароль программе не передаётся."],
   support: ["ПОМОЩЬ", "Поддержка Steam Hunter", "Отправьте сообщение разработчику или откройте сообщения владельца."],
   settings: ["ПАРАМЕТРЫ", "Настройки Windows-версии", "Тема, уведомления, обновления и локальные данные приложения."],
 };
@@ -246,50 +245,6 @@ function renderSales() {
   }).join("")}</div>`;
 }
 
-function steamStatus(profile) {
-  if (profile.gameextrainfo) return `Играет в ${profile.gameextrainfo}`;
-  return profile.personastate > 0 ? "В сети" : "Не в сети";
-}
-
-async function refreshAccount() {
-  try {
-    const result = await api.steamMe();
-    const profile = result?.profile;
-    const side = document.querySelector("#sidebar-account");
-    const top = document.querySelector("#profile-button span");
-    if (!profile) {
-      side.innerHTML = '<div class="avatar-placeholder">S</div><div><strong>Steam не подключён</strong><small>Нажмите для входа</small></div><span>›</span>';
-      top.textContent = "Подключить Steam";
-      return null;
-    }
-    side.innerHTML = `<img src="${escapeHtml(profile.avatarfull)}" alt=""><div><strong>${escapeHtml(profile.personaname)}</strong><small>${escapeHtml(steamStatus(profile))}</small></div><span>›</span>`;
-    top.textContent = profile.personaname;
-    return profile;
-  } catch {
-    await save({ steamToken: "" });
-    return null;
-  }
-}
-
-async function renderFriends() {
-  content.innerHTML = '<div class="loading-panel"><div class="spinner"></div><p>Проверяем Steam-аккаунт…</p></div>';
-  const profile = await refreshAccount();
-  if (!profile) {
-    content.innerHTML = '<div class="empty"><h2>Подключите Steam</h2><p>Откроется официальный сайт Steam. Steam Hunter не увидит пароль.</p><button class="primary" id="steam-login-main">Подключить Steam</button></div>';
-    document.querySelector("#steam-login-main").onclick = () => api.steamLogin().then(() => toast("Завершите вход в открывшемся браузере")).catch(showError);
-    return;
-  }
-  try {
-    const result = await api.steamFriends();
-    const friends = [...(result.friends || [])].sort((a, b) => Number(Boolean(b.gameextrainfo)) - Number(Boolean(a.gameextrainfo)) || b.personastate - a.personastate);
-    content.innerHTML = `<article class="info-card" style="margin-bottom:18px;display:flex;align-items:center;gap:15px"><img src="${escapeHtml(profile.avatarfull)}" style="width:70px;height:70px;border-radius:14px"><div><h2 style="margin:0">${escapeHtml(profile.personaname)}</h2><p style="margin:5px 0">${escapeHtml(steamStatus(profile))} · SteamID ${escapeHtml(profile.steamid)}</p></div><button class="secondary" id="profile-open" style="margin-left:auto">Открыть профиль</button><button class="danger" id="steam-logout">Выйти</button></article>
-      <h2>Друзья <small style="color:var(--muted)">${friends.length}</small></h2>${result.isPrivate ? '<div class="info-card"><h3>Список друзей скрыт</h3><p>Измените приватность списка друзей в настройках профиля Steam.</p></div>' : `<div class="friends-grid">${friends.map((friend) => `<article class="friend ${friend.personastate > 0 || friend.gameextrainfo ? "online" : ""}" data-url="${escapeHtml(friend.profileurl)}"><img src="${escapeHtml(friend.avatarfull)}"><div><strong>${escapeHtml(friend.personaname)}</strong><small>${escapeHtml(steamStatus(friend))}</small></div></article>`).join("")}</div>`}`;
-    document.querySelector("#profile-open").onclick = () => api.external(profile.profileurl);
-    document.querySelector("#steam-logout").onclick = async () => { await api.steamLogout(); await save({ steamToken: "" }); await renderFriends(); };
-    content.querySelectorAll(".friend").forEach((item) => item.onclick = () => api.external(item.dataset.url));
-  } catch (error) { showError(error); }
-}
-
 function renderSupport() {
   content.innerHTML = `<div class="support-layout"><article class="info-card"><h2>Написать разработчику</h2><p>Опишите проблему или предложите новую функцию.</p><form class="form" id="support-form"><input name="name" required maxlength="50" placeholder="Ваше имя"><input name="contact" maxlength="100" placeholder="Контакт для ответа (необязательно)"><textarea name="message" required maxlength="2000" placeholder="Сообщение"></textarea><button class="primary">Отправить</button></form></article>
     <article class="info-card"><h2>Сообщения пользователей</h2><p>Этот раздел предназначен только для владельца Steam Hunter.</p><form class="form" id="admin-form"><input name="key" type="password" required placeholder="Код владельца"><button class="secondary">Открыть сообщения</button></form><div id="admin-messages"></div></article></div>`;
@@ -324,7 +279,6 @@ function renderCurrent() {
   if (["favorites", "viewed"].includes(state.view)) return renderLocalGames(state.view);
   if (state.view === "compare") return renderCompare();
   if (state.view === "sales") return renderSales();
-  if (state.view === "friends") return renderFriends();
   if (state.view === "support") return renderSupport();
   if (state.view === "settings") return renderSettings();
 }
@@ -352,15 +306,11 @@ document.querySelector("#search").onkeydown = async (event) => {
   if (state.query) await save({ searchHistory: [state.query, ...store.searchHistory.filter((item) => item !== state.query)].slice(0, 20) });
   await loadCatalog(true);
 };
-document.querySelector("#sidebar-account").onclick = () => switchView("friends");
-document.querySelector("#profile-button").onclick = () => switchView("friends");
-api.onSteamAuthenticated(async () => { await refreshAccount(); await switchView("friends"); toast("Steam-аккаунт подключён"); });
 
 async function init() {
   store = await api.readStore();
   setTheme(store.settings.theme);
   updateCounters();
-  await refreshAccount();
   await loadCatalog(true);
   setTimeout(() => document.querySelector("#splash").classList.add("hidden"), 900);
 }

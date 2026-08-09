@@ -22,6 +22,13 @@
       "when": 1786277505184,
       "tag": "0002_useful_anthem",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1786295406779,
+      "tag": "0003_tiny_warhawk",
+      "breakpoints": true
     }
   ]
 }

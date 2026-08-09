@@ -56,7 +56,6 @@ public class MainActivity extends Activity {
     private final ExecutorService executor = Executors.newFixedThreadPool(5);
     private final Handler handler = new Handler(Looper.getMainLooper());
     private final StoreClient client = new StoreClient();
-    private final SteamAccountClient accountClient = new SteamAccountClient();
     private UserStore store;
     private boolean dark;
     private int background;
@@ -110,7 +109,6 @@ public class MainActivity extends Activity {
                 .alpha(0f).scaleX(1.08f).scaleY(1.08f).setDuration(420)
                 .withEndAction(provider::remove).start());
         store = new UserStore(this);
-        handleSteamCallback(getIntent());
         applyPalette();
         DealWorker.schedule(this);
         if (savedInstanceState == null) {
@@ -273,12 +271,9 @@ public class MainActivity extends Activity {
         HorizontalScrollView servicesScroll = new HorizontalScrollView(this);
         servicesScroll.setHorizontalScrollBarEnabled(false);
         LinearLayout services = horizontal();
-        Button steamAccount = button("● Steam-аккаунт", panelStrong, primaryText);
-        steamAccount.setOnClickListener(v -> showSteamAccount());
-        services.addView(steamAccount, fixed(150, 44, 0));
         Button wishlist = button("♥ Желаемое", panelStrong, primaryText);
         wishlist.setOnClickListener(v -> showWishlist());
-        services.addView(wishlist, fixed(126, 44, 7));
+        services.addView(wishlist, fixed(126, 44, 0));
         Button compare = button("⇄ Сравнение", panelStrong, primaryText);
         compare.setOnClickListener(v -> showComparison());
         services.addView(compare, fixed(126, 44, 7));
@@ -622,100 +617,6 @@ public class MainActivity extends Activity {
                 .setItems(new String[]{"Написать в поддержку", "Сообщения пользователей (владелец)"}, (d, which) -> {
                     if (which == 0) showSupportForm(); else showOwnerMessagesLogin();
                 }).setNegativeButton("Закрыть", null).show();
-    }
-
-    private void showSteamAccount() {
-        String token = store.steamToken();
-        if (token.isEmpty()) {
-            new AlertDialog.Builder(this).setTitle("Подключить Steam")
-                    .setMessage("Вход откроется на официальной странице Steam. Steam Hunter получит только SteamID и открытые данные профиля. Пароль приложению не передаётся.")
-                    .setPositiveButton("Войти через Steam", (d, w) -> openSteamLogin())
-                    .setNegativeButton("Отмена", null).show();
-            return;
-        }
-        AlertDialog loading = new AlertDialog.Builder(this).setTitle("Steam-аккаунт")
-                .setMessage("Загружаем профиль и друзей…").setNegativeButton("Закрыть", null).show();
-        executor.execute(() -> {
-            try {
-                SteamAccountClient.Profile profile = accountClient.me(token);
-                SteamAccountClient.FriendsResult friends = accountClient.friends(token);
-                runOnUiThread(() -> { loading.dismiss(); showSteamProfile(profile, friends); });
-            } catch (Exception error) {
-                runOnUiThread(() -> {
-                    loading.dismiss();
-                    if (error.getMessage() != null && error.getMessage().contains("войдите")) store.clearSteamToken();
-                    showErrorDialog("Не удалось загрузить Steam", error.getMessage());
-                });
-            }
-        });
-    }
-
-    private void openSteamLogin() {
-        try {
-            String deviceId = android.provider.Settings.Secure.getString(getContentResolver(), android.provider.Settings.Secure.ANDROID_ID);
-            startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(accountClient.loginUrl(deviceId))));
-        } catch (Exception error) { showErrorDialog("Не удалось открыть Steam", error.getMessage()); }
-    }
-
-    private void showSteamProfile(SteamAccountClient.Profile profile, SteamAccountClient.FriendsResult result) {
-        LinearLayout content = vertical(); content.setPadding(dp(17), dp(5), dp(17), dp(12));
-        LinearLayout owner = horizontal();
-        ImageView avatar = new ImageView(this); avatar.setScaleType(ImageView.ScaleType.CENTER_CROP);
-        avatar.setBackground(rounded(panelStrong, 12, border)); owner.addView(avatar, fixed(74, 74, 0)); loadImage(profile.avatarUrl, avatar);
-        LinearLayout identity = vertical();
-        identity.addView(text(profile.name, 23, primaryText, Typeface.BOLD));
-        identity.addView(text(profile.status(), 13, profile.state > 0 ? accent : secondaryText, Typeface.BOLD));
-        identity.addView(text("SteamID: " + profile.steamId, 10, secondaryText, Typeface.NORMAL));
-        owner.addView(identity, weighted(74, 1f, 12)); content.addView(owner);
-        Button openProfile = button("Открыть профиль Steam ↗", panelStrong, primaryText);
-        openProfile.setOnClickListener(v -> startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(profile.profileUrl))));
-        content.addView(openProfile, margins(-1, 46, 0, 12, 0, 14));
-
-        content.addView(text("ДРУЗЬЯ · " + result.friends.size(), 12, accent, Typeface.BOLD));
-        if (result.isPrivate) {
-            content.addView(text("Список друзей закрыт настройками приватности Steam.", 14, secondaryText, Typeface.BOLD), margins(-1, -2, 0, 8, 0, 8));
-        } else if (result.friends.isEmpty()) {
-            content.addView(text("В открытом списке пока нет друзей.", 14, secondaryText, Typeface.NORMAL));
-        } else {
-            for (SteamAccountClient.Profile friend : result.friends) content.addView(createFriendRow(friend));
-        }
-        ScrollView scroll = new ScrollView(this); scroll.addView(content);
-        new AlertDialog.Builder(this).setTitle("Мой Steam").setView(scroll)
-                .setPositiveButton("Закрыть", null)
-                .setNeutralButton("Выйти", (d, w) -> logoutSteam()).show();
-    }
-
-    private View createFriendRow(SteamAccountClient.Profile friend) {
-        LinearLayout row = horizontal(); row.setPadding(dp(10), dp(9), dp(10), dp(9));
-        row.setBackground(rounded(panelStrong, 9, border));
-        ImageView avatar = new ImageView(this); avatar.setScaleType(ImageView.ScaleType.CENTER_CROP);
-        row.addView(avatar, fixed(48, 48, 0)); loadImage(friend.avatarUrl, avatar);
-        LinearLayout info = vertical(); info.addView(text(friend.name, 16, primaryText, Typeface.BOLD));
-        info.addView(text(friend.status(), 11, friend.state > 0 ? accent : secondaryText, Typeface.NORMAL));
-        row.addView(info, weighted(48, 1f, 9));
-        row.setOnClickListener(v -> startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(friend.profileUrl))));
-        row.setLayoutParams(margins(-1, -2, 0, 7, 0, 0)); return row;
-    }
-
-    private void logoutSteam() {
-        String token = store.steamToken(); store.clearSteamToken();
-        executor.execute(() -> { try { accountClient.logout(token); } catch (Exception ignored) { } });
-        Toast.makeText(this, "Steam-аккаунт отключён", Toast.LENGTH_SHORT).show();
-    }
-
-    private void handleSteamCallback(Intent intent) {
-        Uri data = intent == null ? null : intent.getData();
-        if (data == null || !"steamhunter".equals(data.getScheme()) || !"steam-auth".equals(data.getHost())) return;
-        String token = data.getQueryParameter("token");
-        if (token == null || !token.matches("[a-f0-9]{64}")) return;
-        store.saveSteamToken(token);
-        intent.setData(null);
-        Toast.makeText(this, "Steam-аккаунт подключён", Toast.LENGTH_LONG).show();
-        handler.postDelayed(this::showSteamAccount, 1600);
-    }
-
-    @Override protected void onNewIntent(Intent intent) {
-        super.onNewIntent(intent); setIntent(intent); handleSteamCallback(intent);
     }
 
     private void showSupportForm() {

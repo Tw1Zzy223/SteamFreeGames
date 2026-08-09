@@ -22,9 +22,6 @@ public class UserStore {
     public boolean isDark() { return preferences.getBoolean("dark_theme", true); }
     public void setDark(boolean value) { preferences.edit().putBoolean("dark_theme", value).apply(); }
 
-    public String steamToken() { return preferences.getString("steam_session_token", ""); }
-    public void saveSteamToken(String token) { preferences.edit().putString("steam_session_token", token).apply(); }
-    public void clearSteamToken() { preferences.edit().remove("steam_session_token").apply(); }
 
     public Set<String> favorites() { return new HashSet<>(preferences.getStringSet("favorites", new HashSet<>())); }
     public boolean isFavorite(String appId) { return favorites().contains(appId); }
