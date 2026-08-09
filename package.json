@@ -85,14 +85,6 @@
       "installerLanguages": [
         "ru_RU"
       ]
-    },
-    "protocols": [
-      {
-        "name": "Steam Hunter",
-        "schemes": [
-          "steamhunter"
-        ]
-      }
-    ]
+    }
   }
 }

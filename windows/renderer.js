@@ -13,9 +13,7 @@ const viewInfo = {
   viewed: ["ИСТОРИЯ", "Просмотренные игры", "Карточки, которые вы недавно открывали."],
   compare: ["СРАВНЕНИЕ", "Сравнить игры", "Цены, отзывы и требования рядом — удобно выбирать перед покупкой."],
   sales: ["КАЛЕНДАРЬ", "Распродажи и фестивали", "Ближайшие официально объявленные события Steam с обратным отсчётом."],
-  friends: ["STEAM", "Аккаунт и друзья", "Безопасный вход через официальный сайт Steam. Пароль программе не передаётся."],
-  library: ["МОЙ STEAM", "Моя библиотека Steam", "Игры аккаунта, игровое время и достижения. Требуется открытая библиотека."],
-  news: ["НОВОСТИ", "Новости моих игр", "Последние обновления игр из избранного и библиотеки Steam."],
+  news: ["НОВОСТИ", "Новости избранных игр", "Последние обновления игр, которые вы добавили в избранное."],
   support: ["ПОМОЩЬ", "Поддержка Steam Hunter", "Отправьте сообщение разработчику или откройте сообщения владельца."],
   settings: ["ПАРАМЕТРЫ", "Настройки Windows-версии", "Тема, уведомления, обновления и локальные данные приложения."],
 };
@@ -257,102 +255,12 @@ function renderSales() {
   }).join("")}</div>`;
 }
 
-function steamStatus(profile) {
-  if (profile.gameextrainfo) return `Играет в ${profile.gameextrainfo}`;
-  return profile.personastate > 0 ? "В сети" : "Не в сети";
-}
-
-async function refreshAccount() {
-  try {
-    const result = await api.steamMe();
-    const profile = result?.profile;
-    const side = document.querySelector("#sidebar-account");
-    const top = document.querySelector("#profile-button span");
-    if (!profile) {
-      side.innerHTML = '<div class="avatar-placeholder">S</div><div><strong>Steam не подключён</strong><small>Нажмите для входа</small></div><span>›</span>';
-      top.textContent = "Подключить Steam";
-      return null;
-    }
-    side.innerHTML = `<img src="${escapeHtml(profile.avatarfull)}" alt=""><div><strong>${escapeHtml(profile.personaname)}</strong><small>${escapeHtml(steamStatus(profile))}</small></div><span>›</span>`;
-    top.textContent = profile.personaname;
-    return profile;
-  } catch {
-    await save({ steamToken: "" });
-    return null;
-  }
-}
-
-async function renderFriends() {
-  content.innerHTML = '<div class="loading-panel"><div class="spinner"></div><p>Проверяем Steam-аккаунт…</p></div>';
-  const profile = await refreshAccount();
-  if (!profile) {
-    content.innerHTML = '<div class="empty"><h2>Подключите Steam</h2><p>Откроется официальный сайт Steam. Steam Hunter не увидит пароль.</p><button class="primary" id="steam-login-main">Подключить Steam</button></div>';
-    document.querySelector("#steam-login-main").onclick = () => api.steamLogin().then(() => toast("Завершите вход в открывшемся браузере")).catch(showError);
-    return;
-  }
-  try {
-    const result = await api.steamFriends();
-    const friends = [...(result.friends || [])].sort((a, b) => Number(Boolean(b.gameextrainfo)) - Number(Boolean(a.gameextrainfo)) || b.personastate - a.personastate);
-    content.innerHTML = `<article class="info-card" style="margin-bottom:18px;display:flex;align-items:center;gap:15px"><img src="${escapeHtml(profile.avatarfull)}" style="width:70px;height:70px;border-radius:14px"><div><h2 style="margin:0">${escapeHtml(profile.personaname)}</h2><p style="margin:5px 0">${escapeHtml(steamStatus(profile))} · SteamID ${escapeHtml(profile.steamid)}</p></div><button class="secondary" id="profile-open" style="margin-left:auto">Открыть профиль</button><button class="danger" id="steam-logout">Выйти</button></article>
-      <h2>Друзья <small style="color:var(--muted)">${friends.length}</small></h2>${result.isPrivate ? '<div class="info-card"><h3>Список друзей скрыт</h3><p>Измените приватность списка друзей в настройках профиля Steam.</p></div>' : `<div class="friends-grid">${friends.map((friend) => `<article class="friend ${friend.personastate > 0 || friend.gameextrainfo ? "online" : ""}" data-url="${escapeHtml(friend.profileurl)}"><img src="${escapeHtml(friend.avatarfull)}"><div><strong>${escapeHtml(friend.personaname)}</strong><small>${escapeHtml(steamStatus(friend))}</small></div></article>`).join("")}</div>`}`;
-    document.querySelector("#profile-open").onclick = () => api.external(profile.profileurl);
-    document.querySelector("#steam-logout").onclick = async () => { await api.steamLogout(); await save({ steamToken: "" }); await renderFriends(); };
-    content.querySelectorAll(".friend").forEach((item) => item.onclick = () => api.external(item.dataset.url));
-  } catch (error) { showError(error); }
-}
-
-function ownedToGame(item) {
-  return {
-    appId: String(item.appid), title: item.name || `Игра ${item.appid}`,
-    image: `https://cdn.akamai.steamstatic.com/steam/apps/${item.appid}/header.jpg`,
-    discount: 0, price: "В библиотеке", steamUrl: `https://store.steampowered.com/app/${item.appid}`,
-    playtime: Number(item.playtime_forever || 0),
-  };
-}
-
-async function renderLibrary() {
-  content.innerHTML = '<div class="loading-panel"><div class="spinner"></div><p>Загружаем библиотеку Steam…</p></div>';
-  const profile = await refreshAccount();
-  if (!profile) {
-    content.innerHTML = '<div class="empty"><h2>Сначала подключите Steam</h2><button class="primary" id="library-login">Подключить Steam</button></div>';
-    document.querySelector("#library-login").onclick = () => api.steamLogin();
-    return;
-  }
-  try {
-    const result = await api.steamLibrary();
-    if (result.isPrivate) {
-      content.innerHTML = '<div class="empty"><h2>Библиотека скрыта</h2><p>Откройте «Доступ к игровой информации» в настройках приватности Steam.</p></div>';
-      return;
-    }
-    const games = (result.games || []).map(ownedToGame);
-    const totalMinutes = games.reduce((sum, game) => sum + game.playtime, 0);
-    content.innerHTML = `<article class="info-card" style="margin-bottom:18px"><h2>${games.length.toLocaleString("ru-RU")} игр · ${Math.round(totalMinutes / 60).toLocaleString("ru-RU")} ч. сыграно</h2><p>Игры отсортированы по общему игровому времени.</p></article><div class="games-grid">${games.map((game) => `${gameCard(game).replace('</div></article>', `<button class="secondary achievements-btn" style="width:100%;margin-top:8px">Достижения · ${Math.round(game.playtime / 60)} ч.</button></div></article>`)}`).join("")}</div>`;
-    bindCards(games);
-    content.querySelectorAll(".achievements-btn").forEach((button) => {
-      const card = button.closest(".game-card");
-      button.onclick = () => showAchievements(card.dataset.appid, games.find((game) => game.appId === card.dataset.appid)?.title || "Игра");
-    });
-  } catch (error) { content.innerHTML = `<div class="empty"><h2>Не удалось открыть библиотеку</h2><p>${escapeHtml(error.message)}</p></div>`; }
-}
-
-async function showAchievements(appId, title) {
-  openModal('<div class="loading-panel"><div class="spinner"></div><p>Загружаем достижения…</p></div>');
-  try {
-    const result = await api.steamAchievements(appId);
-    openModal(`<div class="detail-body"><h2>${escapeHtml(title)}</h2><div class="review-score">${result.unlocked} из ${result.total}</div><p>Получено достижений</p>${result.achievements?.length ? result.achievements.map((item) => `<div class="review">${Number(item.achieved) === 1 ? "🏆" : "○"} <strong>${escapeHtml(item.name || item.apiname)}</strong><br>${escapeHtml(item.description || "")}</div>`).join("") : '<p class="detail-description">Достижения отсутствуют или скрыты настройками Steam.</p>'}</div>`);
-  } catch (error) { closeModal(); showError(error); }
-}
-
 async function renderNews() {
   content.innerHTML = '<div class="loading-panel"><div class="spinner"></div><p>Собираем новости игр…</p></div>';
   try {
-    let sources = store.favorites.slice(0, 6);
-    if (!sources.length && store.steamToken) {
-      const library = await api.steamLibrary();
-      sources = (library.games || []).slice(0, 6).map(ownedToGame);
-    }
+    const sources = store.favorites.slice(0, 6);
     if (!sources.length) {
-      content.innerHTML = '<div class="empty"><h2>Добавьте игры в избранное</h2><p>Или подключите Steam, чтобы видеть новости библиотеки.</p></div>';
+      content.innerHTML = '<div class="empty"><h2>Добавьте игры в избранное</h2><p>После этого здесь появятся новости выбранных игр.</p></div>';
       return;
     }
     const groups = await Promise.all(sources.map(async (game) => ({ game, news: (await api.steamNews(game.appId)).news || [] })));
@@ -360,27 +268,6 @@ async function renderNews() {
     content.innerHTML = `<div class="dashboard-grid">${items.map((item) => `<article class="info-card news-card"><span class="card-label">${escapeHtml(item.game.title)}</span><h3>${escapeHtml(item.title)}</h3><p>${escapeHtml(item.contents || "")}</p><small>${new Date(Number(item.date) * 1000).toLocaleDateString("ru-RU")}</small><button class="secondary news-open" data-url="${escapeHtml(item.url)}">Открыть новость</button></article>`).join("")}</div>`;
     content.querySelectorAll(".news-open").forEach((button) => button.onclick = () => api.external(button.dataset.url));
   } catch (error) { content.innerHTML = `<div class="empty"><h2>Новости временно недоступны</h2><p>${escapeHtml(error.message)}</p></div>`; }
-}
-
-function mergeGames(left = [], right = []) {
-  return [...new Map([...left, ...right].filter((item) => item?.appId).map((item) => [String(item.appId), item])).values()];
-}
-
-async function synchronize(showMessage = false) {
-  if (!store.steamToken) return;
-  try {
-    const remote = (await api.syncPull()).data || {};
-    const patch = {
-      favorites: mergeGames(remote.favorites, store.favorites),
-      viewed: mergeGames(remote.viewed, store.viewed).slice(0, 100),
-      compare: mergeGames(remote.compare, store.compare).slice(0, 3),
-      searchHistory: [...new Set([...(remote.searchHistory || []), ...store.searchHistory])].slice(0, 20),
-      settings: { ...remote.settings, ...store.settings },
-    };
-    await save(patch);
-    await api.syncPush(patch);
-    if (showMessage) toast("Телефон и компьютер синхронизированы");
-  } catch (error) { if (showMessage) showError(error); }
 }
 
 function renderSupport() {
@@ -418,8 +305,7 @@ function enhanceDesktopSettings() {
   grid.insertAdjacentHTML("beforeend", `<article class="info-card"><h2>Работа в Windows</h2>
     <div class="setting-row"><div><strong>Системный трей</strong><p>Кнопка закрытия прячет Steam Hunter возле часов.</p></div><button class="switch ${store.settings.tray ? "on" : ""}" id="tray-switch"></button></div>
     <div class="setting-row"><div><strong>Запуск вместе с Windows</strong><p>Автоматически искать новые предложения после входа.</p></div><button class="switch ${store.settings.autoStart ? "on" : ""}" id="autostart-switch"></button></div>
-    <div class="setting-row"><div><strong>Глобальные клавиши</strong><p>Ctrl+Shift+F — поиск, Ctrl+Shift+R — обновить.</p></div><button class="switch ${store.settings.globalHotkeys ? "on" : ""}" id="hotkeys-switch"></button></div></article>
-    <article class="info-card"><h2>Синхронизация</h2><p>Избранное, история и настройки объединяются между Android и Windows после входа в один Steam-аккаунт.</p><button class="primary" id="sync-now">Синхронизировать сейчас</button></article>`);
+    <div class="setting-row"><div><strong>Глобальные клавиши</strong><p>Ctrl+Shift+F — поиск, Ctrl+Shift+R — обновить.</p></div><button class="switch ${store.settings.globalHotkeys ? "on" : ""}" id="hotkeys-switch"></button></div></article>`);
   const changeDesktop = async (key) => {
     store = await api.desktopSettings({ [key]: !store.settings[key] });
     renderSettings(); enhanceDesktopSettings();
@@ -427,7 +313,6 @@ function enhanceDesktopSettings() {
   document.querySelector("#tray-switch").onclick = () => changeDesktop("tray");
   document.querySelector("#autostart-switch").onclick = () => changeDesktop("autoStart");
   document.querySelector("#hotkeys-switch").onclick = () => changeDesktop("globalHotkeys");
-  document.querySelector("#sync-now").onclick = () => synchronize(true);
   document.querySelector("#check-update").onclick = async () => {
     const box = document.querySelector("#update-result"); box.textContent = "Проверяем обновление…";
     try { await api.checkUpdate(); } catch (error) { box.textContent = error.message; }
@@ -439,8 +324,6 @@ function renderCurrent() {
   if (["favorites", "viewed"].includes(state.view)) return renderLocalGames(state.view);
   if (state.view === "compare") return renderCompare();
   if (state.view === "sales") return renderSales();
-  if (state.view === "friends") return renderFriends();
-  if (state.view === "library") return renderLibrary();
   if (state.view === "news") return renderNews();
   if (state.view === "support") return renderSupport();
   if (state.view === "settings") { renderSettings(); enhanceDesktopSettings(); }
@@ -469,9 +352,6 @@ document.querySelector("#search").onkeydown = async (event) => {
   if (state.query) await save({ searchHistory: [state.query, ...store.searchHistory.filter((item) => item !== state.query)].slice(0, 20) });
   await loadCatalog(true);
 };
-document.querySelector("#sidebar-account").onclick = () => switchView("friends");
-document.querySelector("#profile-button").onclick = () => switchView("friends");
-api.onSteamAuthenticated(async () => { await refreshAccount(); await synchronize(true); await switchView("friends"); toast("Steam-аккаунт подключён"); });
 api.onShortcutSearch(() => { switchView("discounts"); const search = document.querySelector("#search"); search.disabled = false; search.focus(); });
 api.onShortcutRefresh(() => { if (["free", "discounts", "all", "best", "weekends"].includes(state.view)) loadCatalog(true); else switchView("free"); });
 api.onUpdateStatus((status) => {
@@ -489,8 +369,6 @@ async function init() {
   store = await api.readStore();
   setTheme(store.settings.theme);
   updateCounters();
-  await refreshAccount();
-  await synchronize(false);
   await loadCatalog(true);
   setTimeout(() => document.querySelector("#splash").classList.add("hidden"), 900);
 }

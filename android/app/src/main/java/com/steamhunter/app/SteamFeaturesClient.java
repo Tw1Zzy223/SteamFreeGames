@@ -16,28 +16,6 @@ import java.util.List;
 public class SteamFeaturesClient {
     private static final String BASE = "https://steam-hunter-games.pagrishaevich.chatgpt.site";
 
-    public LibraryResult library(String token) throws Exception {
-        JSONObject root = request("GET", "/api/steam/library", token, null);
-        JSONArray array = root.optJSONArray("games"); List<LibraryGame> games = new ArrayList<>();
-        if (array != null) for (int i = 0; i < array.length(); i++) {
-            JSONObject item = array.getJSONObject(i);
-            games.add(new LibraryGame(item.optString("appid"), item.optString("name", "Игра Steam"),
-                    item.optInt("playtime_forever"), item.optInt("playtime_2weeks")));
-        }
-        return new LibraryResult(games, root.optBoolean("isPrivate", false));
-    }
-
-    public Achievements achievements(String token, String appId) throws Exception {
-        JSONObject root = request("GET", "/api/steam/achievements?app_id=" + encode(appId), token, null);
-        JSONArray array = root.optJSONArray("achievements"); List<Achievement> values = new ArrayList<>();
-        if (array != null) for (int i = 0; i < array.length(); i++) {
-            JSONObject item = array.getJSONObject(i);
-            values.add(new Achievement(item.optString("name", item.optString("apiname")),
-                    item.optString("description"), item.optInt("achieved") == 1));
-        }
-        return new Achievements(root.optInt("unlocked"), root.optInt("total"), values);
-    }
-
     public List<NewsItem> news(String appId) throws Exception {
         JSONObject root = request("GET", "/api/steam/news?app_id=" + encode(appId), "", null);
         JSONArray array = root.optJSONArray("news"); List<NewsItem> result = new ArrayList<>();
@@ -56,15 +34,6 @@ public class SteamFeaturesClient {
             result.add(new PricePoint(item.optString("currency"), item.optInt("finalCents"), item.optInt("discountPercent"), item.optLong("capturedAt")));
         }
         return result;
-    }
-
-    public JSONObject pullSync(String token) throws Exception {
-        return request("GET", "/api/steam/sync", token, null).optJSONObject("data");
-    }
-
-    public void pushSync(String token, JSONObject data) throws Exception {
-        JSONObject body = new JSONObject(); body.put("data", data);
-        request("PUT", "/api/steam/sync", token, body.toString());
     }
 
     public LatestRelease latestRelease() throws Exception {
@@ -105,24 +74,6 @@ public class SteamFeaturesClient {
 
     private String encode(String value) throws Exception { return URLEncoder.encode(value, StandardCharsets.UTF_8.name()); }
 
-    public static class LibraryGame {
-        public final String appId, name; public final int playtimeMinutes, recentMinutes;
-        LibraryGame(String appId, String name, int playtimeMinutes, int recentMinutes) {
-            this.appId = appId; this.name = name; this.playtimeMinutes = playtimeMinutes; this.recentMinutes = recentMinutes;
-        }
-    }
-    public static class LibraryResult {
-        public final List<LibraryGame> games; public final boolean isPrivate;
-        LibraryResult(List<LibraryGame> games, boolean isPrivate) { this.games = games; this.isPrivate = isPrivate; }
-    }
-    public static class Achievement {
-        public final String name, description; public final boolean unlocked;
-        Achievement(String name, String description, boolean unlocked) { this.name = name; this.description = description; this.unlocked = unlocked; }
-    }
-    public static class Achievements {
-        public final int unlocked, total; public final List<Achievement> items;
-        Achievements(int unlocked, int total, List<Achievement> items) { this.unlocked = unlocked; this.total = total; this.items = items; }
-    }
     public static class NewsItem {
         public final String title, contents, url; public final long date;
         NewsItem(String title, String contents, String url, long date) { this.title = title; this.contents = contents; this.url = url; this.date = date; }
