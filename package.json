@@ -1,6 +1,8 @@
 {
   "name": "steam-hunter",
   "version": "0.3.0",
+  "description": "Steam Hunter — каталог бесплатных игр, скидок и событий Steam для Android и Windows.",
+  "author": "Tw1Zzy223",
   "private": true,
   "packageManager": "pnpm@11.16.0",
   "engines": {
@@ -12,7 +14,10 @@
     "start": "vinext start",
     "test": "pnpm run build && node --test tests/rendered-html.test.mjs",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
-    "db:generate": "drizzle-kit generate"
+    "db:generate": "drizzle-kit generate",
+    "desktop:dev": "electron windows/main.cjs",
+    "desktop:pack": "electron-builder --win nsis --x64",
+    "desktop:dir": "electron-builder --win dir --x64"
   },
   "dependencies": {
     "drizzle-orm": "0.45.2",
@@ -30,6 +35,8 @@
     "@vitejs/plugin-react": "6.0.2",
     "@vitejs/plugin-rsc": "0.5.26",
     "drizzle-kit": "0.31.10",
+    "electron": "^43.3.0",
+    "electron-builder": "^26.15.3",
     "eslint": "9.39.4",
     "eslint-plugin-jsx-a11y": "6.10.2",
     "eslint-plugin-react": "7.37.5",
@@ -43,5 +50,43 @@
     "vite": "8.0.13",
     "wrangler": "4.92.0"
   },
-  "type": "module"
+  "type": "module",
+  "build": {
+    "appId": "com.steamhunter.desktop",
+    "productName": "Steam Hunter",
+    "artifactName": "Steam-Hunter-Setup-${version}.${ext}",
+    "directories": {
+      "output": "release-windows"
+    },
+    "files": [
+      "windows/**/*",
+      "public/og.png",
+      "package.json"
+    ],
+    "extraMetadata": {
+      "main": "windows/main.cjs"
+    },
+    "win": {
+      "target": "nsis",
+      "icon": "windows/icon.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Steam Hunter",
+      "installerLanguages": [
+        "ru_RU"
+      ]
+    },
+    "protocols": [
+      {
+        "name": "Steam Hunter",
+        "schemes": [
+          "steamhunter"
+        ]
+      }
+    ]
+  }
 }

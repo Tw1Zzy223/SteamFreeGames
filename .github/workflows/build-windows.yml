@@ -1,0 +1,40 @@
+name: Собрать Windows
+
+on:
+  push:
+    branches: [main, 'agent/**']
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - name: Получить исходный код
+        uses: actions/checkout@v4
+      - name: Установить pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.16.0
+      - name: Установить Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: pnpm
+      - name: Установить зависимости
+        run: pnpm install --frozen-lockfile
+      - name: Собрать установщик Windows
+        run: pnpm run desktop:pack
+      - name: Сохранить установщик
+        uses: actions/upload-artifact@v4
+        with:
+          name: Steam-Hunter-Windows
+          path: release-windows/Steam-Hunter-Setup-*.exe
+      - name: Добавить установщик в GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: release-windows/Steam-Hunter-Setup-*.exe
