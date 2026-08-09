@@ -1,11 +1,20 @@
 <resources>
-    <style name="Theme.SteamHunter" parent="android:style/Theme.Material.Light.NoActionBar">
+    <style name="Theme.SteamHunter" parent="android:style/Theme.Material.NoActionBar">
         <item name="android:fontFamily">sans</item>
         <item name="android:colorAccent">@color/hunter_ink</item>
         <item name="android:navigationBarColor">@color/hunter_background</item>
         <item name="android:statusBarColor">@color/hunter_background</item>
         <item name="android:windowLightStatusBar">false</item>
         <item name="android:windowBackground">@color/hunter_background</item>
+    </style>
+
+    <style name="Theme.SteamHunter.Light" parent="android:style/Theme.Material.Light.NoActionBar">
+        <item name="android:fontFamily">sans</item>
+        <item name="android:colorAccent">#4A7D00</item>
+        <item name="android:navigationBarColor">#F4F8F6</item>
+        <item name="android:statusBarColor">#F4F8F6</item>
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:windowBackground">#F4F8F6</item>
     </style>
 
     <style name="Theme.SteamHunter.Starting" parent="Theme.SplashScreen.IconBackground">
