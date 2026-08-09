@@ -16,7 +16,7 @@
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
     "db:generate": "drizzle-kit generate",
     "desktop:dev": "electron windows/main.cjs",
-    "desktop:pack": "electron-builder --win nsis --x64",
+    "desktop:pack": "electron-builder --win nsis --x64 --publish never",
     "desktop:dir": "electron-builder --win dir --x64"
   },
   "dependencies": {
