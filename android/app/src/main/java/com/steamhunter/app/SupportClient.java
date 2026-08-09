@@ -13,8 +13,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 public class SupportClient {
-    // После публикации серверной части сюда подставляется постоянный адрес Sites.
-    public static final String ENDPOINT = "https://replace-after-deploy.invalid/api/support";
+    public static final String ENDPOINT = "https://steam-hunter-games.pagrishaevich.chatgpt.site/api/support";
 
     public void send(String deviceId, String name, String contact, String message) throws Exception {
         JSONObject body = new JSONObject();
